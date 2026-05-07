@@ -1,5 +1,13 @@
 # 비정상행동 알람 플랫폼
 
+| 담당 | 작업 위치 | 설명 |
+|---|---|---|
+| 프론트엔드 담당 | frontend/ | 관리자 대시보드, 화면 구현 |
+| 백엔드 담당 | backend/ | API 서버, DB 연동, 알람 이벤트 관리 |
+| AI 담당 | ai-server/, ml/ | 이상행동 탐지 모델 추론 서버 및 모델 학습 |
+| 문서 담당 | docs/ | 아키텍처, API 명세, 회의록, 보고서 관리 |
+| 데이터 담당 | data/ | 데이터셋 설명 및 관리 방식 기록 |
+
 ## 프로젝트 개요
 
 비정상행동 알람 플랫폼은 AI 기반 영상 분석을 통해 낙상, 침입, 이상행동 등 비정상행동을 탐지하고 관리자에게 알람을 제공하는 시스템입니다.
@@ -23,19 +31,19 @@ Frontend -> Backend API -> AI Inference Server -> Database/Storage
 ## 폴더 구조
 
 ```text
-abnormal-behavior-alarm-platform/
-├─ apps/
-│  ├─ frontend/      # 관리자 대시보드 애플리케이션
-│  ├─ backend/       # API 서버 및 비즈니스 로직
-│  └─ ai-server/     # AI 추론 서버
-├─ ml/
-│  ├─ notebooks/     # 실험 및 분석 노트북
-│  ├─ training/      # 모델 학습 코드
-│  ├─ inference/     # 추론 로직
-│  └─ models/        # 모델 관리 문서, 실제 모델 파일은 제외
-├─ data/             # 데이터 관리 문서, 실제 원본 데이터는 제외
-├─ docs/             # 아키텍처, API 명세, 회의록, 보고서
-└─ .github/          # Issue/PR 템플릿 및 GitHub Actions
+.
+├─ frontend/      # 프론트엔드 담당: 관리자 대시보드, 화면 구현
+├─ backend/       # 백엔드 담당: API 서버, DB 연동, 알람 이벤트 관리
+├─ ai-server/     # AI 담당: 이상행동 탐지 모델 추론 서버
+├─ ml/            # AI 담당: 모델 학습, 실험, 추론 코드
+├─ data/          # 데이터 담당: 데이터셋 설명 및 관리 방식 기록
+├─ docs/          # 문서 담당: 아키텍처, API 명세, 회의록, 보고서
+├─ .github/       # GitHub Actions, Issue/PR 템플릿
+├─ README.md
+├─ .env.example
+├─ .gitignore
+├─ AGENTS.md
+└─ docker-compose.yml
 ```
 
 ## 로컬 실행 방법

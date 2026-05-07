@@ -16,9 +16,9 @@ jobs:
 
       - name: Check repository structure
         run: |
-          test -d apps/frontend
-          test -d apps/backend
-          test -d apps/ai-server
+          test -d frontend
+          test -d backend
+          test -d ai-server
           test -d ml/notebooks
           test -d ml/training
           test -d ml/inference
@@ -33,6 +33,12 @@ jobs:
           test -f AGENTS.md
           test -f .env.example
           test -f docker-compose.yml
+          test -f frontend/README.md
+          test -f backend/README.md
+          test -f ai-server/README.md
+          test -f ml/README.md
+          test -f data/README.md
+          test -f docs/README.md
           test -f docs/architecture.md
           test -f docs/api-spec.md
           test -f .github/pull_request_template.md
