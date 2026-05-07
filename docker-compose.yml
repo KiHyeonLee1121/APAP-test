@@ -1,0 +1,54 @@
+services:
+  # 추후 실제 Dockerfile 작성 후 활성화
+  frontend:
+    build:
+      context: ./apps/frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    profiles:
+      - placeholder
+
+  # 추후 실제 Dockerfile 작성 후 활성화
+  backend:
+    build:
+      context: ./apps/backend
+    ports:
+      - "8080:8080"
+    environment:
+      DB_HOST: database
+      DB_PORT: 3306
+      DB_NAME: abnormal_alarm
+      DB_USER: abnormal_user
+      DB_PASSWORD: abnormal_password
+      AI_SERVER_URL: http://ai-server:8000
+    depends_on:
+      - database
+      - ai-server
+    profiles:
+      - placeholder
+
+  # 추후 실제 Dockerfile 작성 후 활성화
+  ai-server:
+    build:
+      context: ./apps/ai-server
+    ports:
+      - "8000:8000"
+    profiles:
+      - placeholder
+
+  database:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: abnormal_alarm
+      MYSQL_USER: abnormal_user
+      MYSQL_PASSWORD: abnormal_password
+      MYSQL_ROOT_PASSWORD: root_password
+    ports:
+      - "3306:3306"
+    volumes:
+      - db_data:/var/lib/mysql
+
+volumes:
+  db_data:

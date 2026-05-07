@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+      - develop
+
+jobs:
+  repository-check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check repository structure
+        run: |
+          test -d apps/frontend
+          test -d apps/backend
+          test -d apps/ai-server
+          test -d ml/notebooks
+          test -d ml/training
+          test -d ml/inference
+          test -d ml/models
+          test -d data
+          test -d docs/meeting-notes
+          test -d docs/report
+
+      - name: Check required documents
+        run: |
+          test -f README.md
+          test -f AGENTS.md
+          test -f .env.example
+          test -f docker-compose.yml
+          test -f docs/architecture.md
+          test -f docs/api-spec.md
+          test -f .github/pull_request_template.md
