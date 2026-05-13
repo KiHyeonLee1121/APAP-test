@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+
+.venv/
+venv/
+
+checkpoints/*.pkl
+
+outputs/*
+!outputs/.gitkeep
+
+data/processed/*
+!data/processed/.gitkeep

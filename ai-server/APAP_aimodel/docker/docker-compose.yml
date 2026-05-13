@@ -1,0 +1,11 @@
+# Development-only compose file for the APAP AI model server MVP.
+services:
+  ai-model-server:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ..:/app
+    command: uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload

@@ -1,0 +1,12 @@
+opencv-python
+mediapipe
+numpy
+pandas
+scikit-learn
+joblib
+tqdm
+fastapi
+uvicorn
+pydantic
+ultralytics
+python-multipart
