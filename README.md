@@ -72,3 +72,25 @@ Frontend -> Backend API -> AI Inference Server -> Database/Storage
 - API Key, DB 비밀번호, JWT Secret 등 비밀값은 GitHub에 올리지 않습니다.
 - `data/README.md`에는 데이터 출처와 관리 방법만 기록합니다.
 - 모델 파일은 별도 스토리지 또는 릴리즈 정책을 정한 뒤 관리합니다.
+
+
+## 개발 환경 설정
+
+- 본 프로젝트는 Windows, macOS 환경에서 동일하게 실행될 수 있도록 아래 기준을 따른다.
+
+### 기본 환경
+
+- Python 3.10.x 사용
+- VS Code 사용 권장
+- Python 가상환경은 `venv` 사용
+- 패키지는 `requirements.txt` 기준으로 설치
+- GPU 연산은 로컬이 아닌 AWS EC2 GPU 서버에서 수행
+
+### 코드 작성 규칙
+
+- 파일명은 소문자와 언더스코어 사용
+  - 예: `pose_estimator.py`, `rule_engine.py`
+- 경로 처리는 `pathlib` 사용
+  - OS별 경로 차이 방지 목적
+- 줄바꿈 형식 통일을 위해 `.gitattributes` 사용
+
