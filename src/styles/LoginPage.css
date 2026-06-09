@@ -38,8 +38,11 @@
 
 .google-section {
   display: flex;
+  flex-direction: column;
   justify-content: center;
   align-items: center;
+
+  width: clamp(260px, 26vw, 420px);
 }
 
 .google-login-btn {
@@ -66,6 +69,15 @@
   transform: translateY(-2px);
 }
 
+.google-login-btn.disabled {
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
+.google-login-btn.disabled:hover {
+  transform: none;
+}
+
 .google-logo {
   width: clamp(34px, 3vw, 52px);
   height: auto;
@@ -75,4 +87,37 @@
   font-size: clamp(18px, 1.8vw, 24px);
   font-weight: 400;
   color: #000;
+}
+
+.google-button-host {
+  width: 100%;
+  min-height: 44px;
+
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.google-button-host.is-submitting {
+  pointer-events: none;
+  opacity: 0.72;
+}
+
+.login-status,
+.login-error {
+  width: 100%;
+
+  margin-top: 14px;
+
+  font-size: 14px;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.login-status {
+  color: #4c7a70;
+}
+
+.login-error {
+  color: #c2410c;
 }

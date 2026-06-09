@@ -1,28 +1,36 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Navigate, Routes, Route } from 'react-router-dom';
 
 import LoginPage from './pages/LoginPage';
 import MainPage from './pages/MainPage';
 import CCTVPage from './pages/CCTVPage';
 import SavedVideoPage from './pages/SavedVideoPage';
 import AlertPage from './pages/AlertPage';
+import ProtectedRoute from './components/ProtectedRoute';
+import { AuthProvider } from './context/AuthContext';
 
 import './App.css';
 
 function App() {
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<LoginPage />} />
+    <AuthProvider>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/" element={<LoginPage />} />
 
-        <Route path="/main" element={<MainPage />} />
+          <Route element={<ProtectedRoute />}>
+            <Route path="/main" element={<MainPage />} />
 
-        <Route path="/cctv" element={<CCTVPage />} />
+            <Route path="/cctv" element={<CCTVPage />} />
 
-        <Route path="/saved-video" element={<SavedVideoPage />} />
+            <Route path="/saved-video" element={<SavedVideoPage />} />
 
-        <Route path="/alert" element={<AlertPage />} />
-      </Routes>
-    </BrowserRouter>
+            <Route path="/alert" element={<AlertPage />} />
+          </Route>
+
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </BrowserRouter>
+    </AuthProvider>
   );
 }
 

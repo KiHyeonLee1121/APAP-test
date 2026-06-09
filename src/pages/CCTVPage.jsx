@@ -10,6 +10,7 @@ function CCTVPage() {
 
   useEffect(() => {
     let stream;
+    const videoElement = videoRef.current;
 
     const startCamera = async () => {
       try {
@@ -18,8 +19,8 @@ function CCTVPage() {
           audio: false,
         });
 
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
+        if (videoElement) {
+          videoElement.srcObject = stream;
         }
       } catch (error) {
         console.error('카메라 접근 실패:', error);
@@ -32,8 +33,8 @@ function CCTVPage() {
       if (stream) {
         stream.getTracks().forEach((track) => track.stop());
 
-        if (videoRef.current) {
-          videoRef.current.srcObject = null;
+        if (videoElement) {
+          videoElement.srcObject = null;
         }
       }
     };

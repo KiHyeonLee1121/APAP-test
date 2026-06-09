@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
+import { useAuth } from '../hooks/useAuth';
+
 import '../styles/MainPage.css';
 
 import logo from '../assets/png/APAP로고.png';
@@ -11,15 +13,14 @@ import user from '../assets/png/회원정보.png';
 
 function MainPage() {
   const navigate = useNavigate();
+  const { logout, user: currentUser } = useAuth();
 
   const [showWithdrawModal, setShowWithdrawModal] = useState(false);
+  const userName = currentUser?.name || currentUser?.email || '사용자';
 
   const handleLogout = () => {
-    // 추후 JWT 사용 시
-    // localStorage.removeItem('accessToken');
-    // localStorage.removeItem('refreshToken');
-
-    navigate('/');
+    logout();
+    navigate('/', { replace: true });
   };
 
   const handleWithdraw = () => {
@@ -28,7 +29,8 @@ function MainPage() {
     // 추후 Spring Boot 연결
     // axios.delete('/users/me');
 
-    navigate('/');
+    logout();
+    navigate('/', { replace: true });
   };
 
   return (
@@ -36,7 +38,7 @@ function MainPage() {
       <div className="left-section">
         <img src={logo} alt="APAP" className="main-logo" />
 
-        <p className="welcome-text">김유진님 안녕하세요</p>
+        <p className="welcome-text">{userName}님 안녕하세요</p>
 
         <button className="logout-btn" onClick={handleLogout}>
           로그아웃
