@@ -10,3 +10,4 @@ uvicorn
 pydantic
 ultralytics
 python-multipart
+torch
