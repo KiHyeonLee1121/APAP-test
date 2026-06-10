@@ -1,6 +1,8 @@
 import { getApiBaseUrl } from '../config/env';
 import { getStoredAccessToken } from './authStorage';
 
+let defaultAccessToken = getStoredAccessToken();
+
 const getFrontendOrigin = () => window.location.origin;
 
 const buildApiUrl = (path) => {
@@ -45,7 +47,7 @@ export const apiRequest = async (
   { method = 'GET', body, headers = {}, token, auth = true } = {},
 ) => {
   const requestHeaders = { ...headers };
-  const accessToken = token ?? getStoredAccessToken();
+  const accessToken = token ?? defaultAccessToken;
 
   if (body !== undefined) {
     requestHeaders['Content-Type'] = 'application/json';
@@ -85,6 +87,14 @@ export const apiRequest = async (
   return payload;
 };
 
+export const setDefaultAuthorizationHeader = (accessToken) => {
+  defaultAccessToken = accessToken || '';
+};
+
+export const clearDefaultAuthorizationHeader = () => {
+  defaultAccessToken = '';
+};
+
 export const loginWithGoogleToken = async (idToken) => {
   const payload = await apiRequest('/api/auth/google', {
     method: 'POST',
@@ -99,4 +109,11 @@ export const fetchCurrentUser = async (token) => {
   const payload = await apiRequest('/api/auth/me', { token });
 
   return payload?.data;
+};
+
+export const logoutWithAccessToken = async (token) => {
+  await apiRequest('/api/auth/logout', {
+    method: 'POST',
+    token,
+  });
 };

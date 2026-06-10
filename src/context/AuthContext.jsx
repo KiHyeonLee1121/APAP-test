@@ -6,7 +6,13 @@ import {
 } from 'react';
 
 import { AuthContext } from './authContextValue';
-import { fetchCurrentUser, loginWithGoogleToken } from '../services/authApi';
+import {
+  clearDefaultAuthorizationHeader,
+  fetchCurrentUser,
+  loginWithGoogleToken,
+  logoutWithAccessToken,
+  setDefaultAuthorizationHeader,
+} from '../services/authApi';
 import {
   clearAuthStorage,
   getStoredAccessToken,
@@ -24,17 +30,33 @@ export function AuthProvider({ children }) {
 
   const persistAuth = useCallback((nextAccessToken, nextUser) => {
     setAuthStorage(nextAccessToken, nextUser);
+    setDefaultAuthorizationHeader(nextAccessToken);
     setAccessToken(nextAccessToken);
     setUser(nextUser);
   }, []);
 
-  const logout = useCallback(() => {
+  const resetAuth = useCallback((nextAuthError = '') => {
     clearAuthStorage();
+    clearDefaultAuthorizationHeader();
     setAccessToken('');
     setUser(null);
     setIsInitializing(false);
-    setAuthError('');
+    setAuthError(nextAuthError);
   }, []);
+
+  const logout = useCallback(async () => {
+    const logoutToken = getStoredAccessToken();
+
+    try {
+      if (logoutToken) {
+        await logoutWithAccessToken(logoutToken);
+      }
+    } catch {
+      // 서버 로그아웃 실패나 만료 토큰(401)도 클라이언트 로그아웃은 계속 진행합니다.
+    } finally {
+      resetAuth();
+    }
+  }, [resetAuth]);
 
   const loginWithGoogle = useCallback(
     async (idToken) => {
@@ -82,10 +104,7 @@ export function AuthProvider({ children }) {
           return;
         }
 
-        clearAuthStorage();
-        setAccessToken('');
-        setUser(null);
-        setAuthError(error.message || '로그인 정보를 확인하지 못했습니다.');
+        resetAuth(error.message || '로그인 정보를 확인하지 못했습니다.');
       } finally {
         if (!isCancelled) {
           setIsInitializing(false);
@@ -98,7 +117,7 @@ export function AuthProvider({ children }) {
     return () => {
       isCancelled = true;
     };
-  }, [accessToken]);
+  }, [accessToken, resetAuth]);
 
   const value = useMemo(
     () => ({

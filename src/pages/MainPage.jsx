@@ -18,18 +18,18 @@ function MainPage() {
   const [showWithdrawModal, setShowWithdrawModal] = useState(false);
   const userName = currentUser?.name || currentUser?.email || '사용자';
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
+    await logout();
     navigate('/', { replace: true });
   };
 
-  const handleWithdraw = () => {
+  const handleWithdraw = async () => {
     alert('회원 탈퇴');
 
     // 추후 Spring Boot 연결
     // axios.delete('/users/me');
 
-    logout();
+    await logout();
     navigate('/', { replace: true });
   };
 
