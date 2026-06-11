@@ -111,6 +111,12 @@ export const fetchCurrentUser = async (token) => {
   return payload?.data;
 };
 
+export const deleteCurrentUser = async (token) =>
+  apiRequest('/api/auth/me', {
+    method: 'DELETE',
+    token,
+  });
+
 export const logoutWithAccessToken = async (token) => {
   await apiRequest('/api/auth/logout', {
     method: 'POST',

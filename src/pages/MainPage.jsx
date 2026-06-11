@@ -13,9 +13,11 @@ import user from '../assets/png/회원정보.png';
 
 function MainPage() {
   const navigate = useNavigate();
-  const { logout, user: currentUser } = useAuth();
+  const { logout, user: currentUser, withdrawAccount } = useAuth();
 
   const [showWithdrawModal, setShowWithdrawModal] = useState(false);
+  const [isWithdrawing, setIsWithdrawing] = useState(false);
+  const [withdrawError, setWithdrawError] = useState('');
   const userName = currentUser?.name || currentUser?.email || '사용자';
 
   const handleLogout = async () => {
@@ -23,14 +25,37 @@ function MainPage() {
     navigate('/', { replace: true });
   };
 
+  const openWithdrawModal = () => {
+    setWithdrawError('');
+    setShowWithdrawModal(true);
+  };
+
+  const closeWithdrawModal = () => {
+    if (isWithdrawing) {
+      return;
+    }
+
+    setWithdrawError('');
+    setShowWithdrawModal(false);
+  };
+
   const handleWithdraw = async () => {
-    alert('회원 탈퇴');
+    if (isWithdrawing) {
+      return;
+    }
 
-    // 추후 Spring Boot 연결
-    // axios.delete('/users/me');
+    setWithdrawError('');
+    setIsWithdrawing(true);
 
-    await logout();
-    navigate('/', { replace: true });
+    try {
+      const message = await withdrawAccount();
+
+      alert(message);
+      navigate('/', { replace: true });
+    } catch (error) {
+      setWithdrawError(error.message || '회원 탈퇴에 실패했습니다.');
+      setIsWithdrawing(false);
+    }
   };
 
   return (
@@ -80,7 +105,7 @@ function MainPage() {
         </div>
 
         {/* 회원 탈퇴 */}
-        <div className="menu-card" onClick={() => setShowWithdrawModal(true)}>
+        <div className="menu-card" onClick={openWithdrawModal}>
           <div className="image-box">
             <img src={user} alt="회원정보" />
           </div>
@@ -96,15 +121,25 @@ function MainPage() {
         <div className="modal-overlay">
           <div className="withdraw-modal">
             <div className="modal-message">정말 탈퇴하시겠습니까?</div>
+            {withdrawError && (
+              <p className="withdraw-error" role="alert">
+                {withdrawError}
+              </p>
+            )}
 
             <div className="modal-buttons">
-              <button className="modal-btn" onClick={handleWithdraw}>
-                네
+              <button
+                className="modal-btn"
+                onClick={handleWithdraw}
+                disabled={isWithdrawing}
+              >
+                {isWithdrawing ? '처리 중' : '네'}
               </button>
 
               <button
                 className="modal-btn"
-                onClick={() => setShowWithdrawModal(false)}
+                onClick={closeWithdrawModal}
+                disabled={isWithdrawing}
               >
                 아니오
               </button>
