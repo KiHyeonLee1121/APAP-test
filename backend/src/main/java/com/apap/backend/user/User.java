@@ -61,6 +61,15 @@ public class User extends BaseEntity {
         this.role = role;
     }
 
+    // 회원 탈퇴
+    public void withdraw() {
+        markDeleted();
+        this.email = "withdrawn_" + id + "@deleted.local";
+        this.googleSub = "withdrawn_" + id;
+        this.name = "탈퇴한 사용자";
+        this.pictureUrl = null;
+    }
+
     public Long getId() {
         return id;
     }

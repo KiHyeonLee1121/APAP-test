@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.DeleteMapping;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -40,12 +41,12 @@ public class AuthController {
         GoogleAccount account = googleTokenVerifier.verify(request.idToken());
         String displayName = StringUtils.hasText(account.name()) ? account.name() : account.email();
 
-        User user = userRepository.findByGoogleSub(account.sub())
+        User user = userRepository.findByGoogleSubAndDeletedFalse(account.sub())
                 .map(found -> {
                     found.syncProfile(displayName, account.pictureUrl());
                     return found;
                 })
-                .orElseGet(() -> userRepository.findByEmail(account.email())
+                .orElseGet(() -> userRepository.findByEmailAndDeletedFalse(account.email())
                         .map(existing -> {
                             // 이전에 가입된 이메일이면 해당 계정에 구글 계정을 연결
                             existing.linkGoogle(account.sub());
@@ -68,7 +69,7 @@ public class AuthController {
     /** 현재 로그인 사용자 정보 */
     @GetMapping("/me")
     public ApiResponse<UserResponse> me(@AuthenticationPrincipal AuthUser authUser) {
-        User user = userRepository.findById(authUser.id())
+        User user = userRepository.findByIdAndDeletedFalse(authUser.id())
                 .orElseThrow(() -> new EntityNotFoundException("사용자를 찾을 수 없습니다."));
         return ApiResponse.ok(UserResponse.from(user));
     }
@@ -109,5 +110,16 @@ public class AuthController {
                     user.getRole().name()
             );
         }
+    }
+    /* 회원 탈퇴*/
+    @DeleteMapping("/me")
+    public ApiResponse<Void> withdraw(@AuthenticationPrincipal AuthUser authUser) {
+        User user = userRepository.findByIdAndDeletedFalse(authUser.id())
+                .orElseThrow(() -> new EntityNotFoundException("사용자를 찾을 수 없습니다."));
+
+        user.withdraw();
+        userRepository.save(user);
+
+        return ApiResponse.ok(null, "회원 탈퇴가 완료되었습니다.");
     }
 }

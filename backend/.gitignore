@@ -2,6 +2,10 @@ target/
 .idea/
 *.iml
 
+.env
+.env.*
+!.env.example
+
 data/
 uploads/
 

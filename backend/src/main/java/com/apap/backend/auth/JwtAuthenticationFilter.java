@@ -12,6 +12,7 @@ import org.springframework.security.web.authentication.WebAuthenticationDetailsS
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
+import com.apap.backend.user.UserRepository;
 
 import java.io.IOException;
 import java.util.List;
@@ -25,9 +26,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private static final String BEARER_PREFIX = "Bearer ";
 
     private final JwtTokenProvider jwtTokenProvider;
+    private final UserRepository userRepository;
 
-    public JwtAuthenticationFilter(JwtTokenProvider jwtTokenProvider) {
+    public JwtAuthenticationFilter(JwtTokenProvider jwtTokenProvider, UserRepository userRepository) {
         this.jwtTokenProvider = jwtTokenProvider;
+        this.userRepository = userRepository;
     }
 
     @Override
@@ -36,7 +39,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         String token = resolveToken(request);
         if (token != null && SecurityContextHolder.getContext().getAuthentication() == null) {
             AuthUser authUser = jwtTokenProvider.parse(token);
-            if (authUser != null) {
+            if (authUser != null && userRepository.existsByIdAndDeletedFalse(authUser.id())) {
                 var authority = new SimpleGrantedAuthority("ROLE_" + authUser.role().name());
                 var authentication = new UsernamePasswordAuthenticationToken(
                         authUser, null, List.of(authority));

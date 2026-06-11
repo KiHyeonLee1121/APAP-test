@@ -2,13 +2,15 @@ server:
   port: 8080
 
 spring:
+  config:
+    import: optional:file:.env[.properties]
   application:
     name: apap-backend
   datasource:
     url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:abnormal_alarm}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul
     driver-class-name: com.mysql.cj.jdbc.Driver
     username: ${DB_USERNAME:root}
-    password: ${DB_PASSWORD:APAP2026}
+    password: ${DB_PASSWORD:}
   jpa:
     hibernate:
       ddl-auto: update
@@ -23,10 +25,10 @@ apap:
   base-url: ${BASE_URL:http://localhost:8080}
   upload-dir: uploads
   google:
-    # 구글 OIDC 클라이언트 ID (Google Cloud Console > OAuth 2.0 클라이언트 ID)
+    # Google OIDC client ID (Google Cloud Console > OAuth 2.0 Client ID)
     client-id: ${GOOGLE_CLIENT_ID:}
   jwt:
-    # JWT 서명 비밀키 (HS256). 운영에서는 반드시 32바이트 이상으로 설정. 비우면 개발용 임시 키가 매 부팅마다 생성됨
+    # JWT signing secret for HS256. Use at least 32 bytes in production.
     secret: ${JWT_SECRET:}
-    # 액세스 토큰 만료 시간(ms). 기본 24시간
+    # Access token expiration time in milliseconds. Default is 24 hours.
     expiration-ms: ${JWT_EXPIRATION_MS:86400000}
