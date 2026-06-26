@@ -1,0 +1,111 @@
+### 0. Health check (공개)
+GET http://localhost:8080/api/health
+
+### 1. Google login (구글 OIDC ID 토큰으로 로그인/회원가입, 공개)
+# idToken은 프론트엔드(Google Identity Services)에서 발급된 실제 ID 토큰으로 교체해야 합니다.
+# 응답의 accessToken(JWT)을 전역 변수로 저장해 이후 요청의 Bearer 토큰으로 사용합니다.
+POST http://localhost:8080/api/auth/google
+Content-Type: application/json
+
+{
+  "idToken": "PASTE_GOOGLE_ID_TOKEN_HERE"
+}
+
+> {% client.global.set("accessToken", response.body.data.accessToken); %}
+
+### 2. 현재 사용자 정보 (인증 필요)
+GET http://localhost:8080/api/auth/me
+Authorization: Bearer {{accessToken}}
+
+### 3. Create video source (MANAGER 이상)
+POST http://localhost:8080/api/videos
+Content-Type: application/json
+Authorization: Bearer {{accessToken}}
+
+{
+  "type": "UPLOAD",
+  "name": "sample-video",
+  "sourceUrl": "uploads/sample.mp4"
+}
+
+### 4. List video sources (현재 로그인 사용자 기준)
+GET http://localhost:8080/api/videos
+Authorization: Bearer {{accessToken}}
+
+### 5. Get video source detail
+GET http://localhost:8080/api/videos/1
+Authorization: Bearer {{accessToken}}
+
+### 6. Update video source (MANAGER 이상)
+PATCH http://localhost:8080/api/videos/1
+Content-Type: application/json
+Authorization: Bearer {{accessToken}}
+
+{
+  "type": "CCTV",
+  "name": "수정된 이름",
+  "sourceUrl": "rtsp://example/stream",
+  "status": "READY"
+}
+
+### 7. Delete video source (soft delete, MANAGER 이상)
+DELETE http://localhost:8080/api/videos/1
+Authorization: Bearer {{accessToken}}
+
+### 8. Create analysis job (AI 서버 POST /predict/video 동기 호출, MANAGER 이상)
+POST http://localhost:8080/api/analysis/jobs
+Content-Type: application/json
+Authorization: Bearer {{accessToken}}
+
+{
+  "videoSourceId": 1
+}
+
+### 9. AI callback (엣지 디바이스가 직접 결과를 전송하는 경우, 공개)
+POST http://localhost:8080/api/analysis/callback
+Content-Type: application/json
+
+{
+  "jobId": 1,
+  "status": "DONE",
+  "errorMessage": null,
+  "events": [
+    {
+      "eventType": "ABNORMAL",
+      "severity": "HIGH",
+      "confidenceScore": 0.91,
+      "detectedAt": "2026-07-01T12:10:00",
+      "snapshotUrl": "uploads/snapshot-1.jpg",
+      "clipUrl": "uploads/clip-1.mp4",
+      "resultJson": "{\"reason\": \"주변 탐색과 가방 접근이 동시에 감지됨\"}"
+    }
+  ]
+}
+
+### 10. List events (현재 로그인 사용자 기준)
+GET http://localhost:8080/api/events
+Authorization: Bearer {{accessToken}}
+
+### 11. List alerts
+GET http://localhost:8080/api/alerts
+Authorization: Bearer {{accessToken}}
+
+### 12. Test alert (MANAGER 이상)
+POST http://localhost:8080/api/alerts/test
+Authorization: Bearer {{accessToken}}
+
+### 13. Dashboard summary
+GET http://localhost:8080/api/dashboard/summary
+Authorization: Bearer {{accessToken}}
+
+### 14. Dashboard timeline (날짜별 이벤트 건수)
+GET http://localhost:8080/api/dashboard/timeline
+Authorization: Bearer {{accessToken}}
+
+### 15. Dashboard severity (심각도별 건수)
+GET http://localhost:8080/api/dashboard/severity
+Authorization: Bearer {{accessToken}}
+
+### 16. Logout (인증 필요, 무상태 — 클라이언트가 토큰 폐기)
+POST http://localhost:8080/api/auth/logout
+Authorization: Bearer {{accessToken}}

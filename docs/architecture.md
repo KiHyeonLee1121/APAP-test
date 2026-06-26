@@ -1,44 +1,116 @@
-# 초기 아키텍처
+# APAP 시스템 구조 (Architecture)
 
-## 전체 시스템 개요
+비정상 행동 알람 플랫폼의 시스템 구조 문서입니다. 백엔드 구현 기준으로 작성되었으며, 프론트엔드/AI 서버 연동 지점을 함께 기술합니다.
 
-비정상행동 알람 플랫폼은 CCTV 또는 영상 입력을 기반으로 AI 서버가 이상행동을 탐지하고, 백엔드 서버가 탐지 이벤트를 저장 및 관리하며, 프론트엔드 대시보드가 관리자에게 알람과 로그를 제공하는 구조를 목표로 합니다.
+## 전체 구성
 
-## 주요 구성요소
+```mermaid
+flowchart TB
+    FE["Frontend Dashboard (React 예정)"] -->|"HTTPS + JWT Bearer"| API["Backend API (Spring Boot, 8080)"]
+    FE -->|"Google 로그인(ID 토큰)"| API
+    API -->|JPA| DB[("MySQL 8")]
+    API -->|파일 저장| FILE["File Storage (로컬 → S3)"]
+    API -->|"POST /predict/video"| AI["AI Inference Server (FastAPI, 8000)"]
+    AI -->|결과 응답 / 콜백| API
+    CAM["CCTV / 업로드 영상 / Edge"] --> API
+    API --> NOTI["Alert (DB 알림)"]
+    NOTI --> FE
+    GOOGLE["Google OIDC"] -. 공개키 검증 .- API
+```
 
-### Frontend
+## 구성 요소
 
-관리자가 알람, 이벤트 로그, 이벤트 상세 정보, 처리 상태를 확인하는 대시보드입니다.
+| 구성 | 기술 | 포트 | 담당 |
+|---|---|---|---|
+| Frontend | React 등 | (예: 5173) | 프론트팀 |
+| Backend API | Spring Boot 3.3 / Java 17 | 8080 | 백엔드팀 |
+| AI Inference | FastAPI / Python | 8000 | AI팀 |
+| DB | MySQL 8 (Docker) | 3306(로컬은 3307 노출) | 백엔드팀 |
+| File Storage | 로컬 `uploads/` → S3 | - | 백엔드팀 |
 
-### Backend API Server
+## 인증 흐름 (구글 OIDC + JWT)
 
-AI 서버에서 전달받은 탐지 이벤트를 저장하고 프론트엔드에 API로 제공합니다. 추후 인증, 권한 관리, 이벤트 상태 관리, 통계 조회 기능을 포함할 수 있습니다.
+이메일/비밀번호 방식을 제거하고 구글 로그인 단일화. 백엔드는 OIDC ID 토큰을 검증한 뒤 자체 JWT를 발급한다.
 
-### AI Inference Server
+```mermaid
+sequenceDiagram
+    participant FE as Frontend (Google Identity Services)
+    participant BE as Backend (8080)
+    participant G as Google 공개키(JWK)
+    FE->>FE: 구글 로그인 → ID 토큰(JWT)
+    FE->>BE: POST /api/auth/google { idToken }
+    BE->>G: 서명·issuer·audience(GOOGLE_CLIENT_ID)·email_verified 검증
+    BE->>BE: google_sub/email로 User find-or-create
+    BE-->>FE: { accessToken(JWT), user }
+    FE->>BE: 이후 요청 Authorization: Bearer <accessToken>
+    BE->>BE: JwtAuthenticationFilter가 토큰 검증 → 권한 부여
+```
 
-영상 입력을 분석하여 낙상, 침입, 이상행동 등 비정상행동을 탐지합니다. 탐지 결과는 백엔드 API 서버로 전송합니다.
+- JWT: HS256, subject=userId, 클레임 email/name/role, 기본 만료 24h.
+- 권한: ADMIN/MANAGER/VIEWER. 조회=VIEWER+, 쓰기=MANAGER+.
 
-### Database
+## 분석 파이프라인
 
-탐지 이벤트, 처리 상태, 관리자 계정, 로그 등 구조화된 데이터를 저장합니다.
+```mermaid
+flowchart LR
+    A["영상 등록/업로드"] --> B["POST /api/analysis/jobs"]
+    B --> C["AI 서버 POST /predict/video (동기)"]
+    C --> D["normal/abnormal + confidence 수신"]
+    D --> E["DetectionEvent 저장"]
+    E -->|ABNORMAL| F["Alert 생성"]
+    E --> G["대시보드/이벤트 조회"]
+    H["엣지/배치 결과"] -->|POST /api/analysis/callback| E
+```
 
-### Storage
+- 기본 흐름은 **동기 호출**(요청 시 AI를 바로 부르고 결과 저장). 실패 시 AnalysisJob `FAILED`.
+- 보조 흐름은 **콜백**(엣지/AI가 결과 배열을 직접 전송). FALL/INTRUSION 등 확장 타입 수용.
+- ⚠️ AI에 전달하는 `video_path`는 백엔드 파일 경로이므로, **AI 서버가 동일 파일에 접근 가능**해야 한다(공유 볼륨/스토리지/URL 합의 필요).
 
-원본 영상, 이벤트 캡처 이미지, 클립 영상, 모델 파일 등 대용량 파일을 저장합니다. GitHub에는 업로드하지 않고 별도 스토리지 사용을 고려합니다.
+## 백엔드 내부 구조 (패키지)
 
-## 데이터 흐름
+```text
+com.apap.backend
+  auth/        # 구글 OIDC 검증(GoogleTokenVerifier), JWT(JwtTokenProvider), 인증 필터, AuthController
+  user/        # User(google_sub, role), UserRepository
+  video/       # VideoSource(soft delete), VideoController
+  analysis/    # AnalysisJob, AnalysisController(AI 호출/콜백)
+  event/       # DetectionEvent, EventController
+  alert/       # Alert, AlertController
+  dashboard/   # 요약/타임라인/심각도 통계
+  config/      # SecurityConfig(필터체인/CORS), OpenApiConfig(Swagger Bearer)
+  common/      # ApiResponse, ApiError, BaseEntity(created/updated/deleted), GlobalExceptionHandler
+  health/      # 헬스체크
+```
 
-1. CCTV 또는 파일 기반 영상이 입력됩니다.
-2. AI 서버가 영상에서 이상행동을 탐지합니다.
-3. AI 서버가 탐지 이벤트를 백엔드 서버에 전달합니다.
-4. 백엔드 서버가 이벤트를 DB에 저장합니다.
-5. 프론트엔드가 백엔드 API를 통해 알람과 이벤트 로그를 표시합니다.
+## 데이터 모델 (요약)
 
-## 추후 확장 가능성
+```mermaid
+erDiagram
+    USER ||--o{ VIDEO_SOURCE : owns
+    VIDEO_SOURCE ||--o{ ANALYSIS_JOB : analyzed_by
+    ANALYSIS_JOB ||--o{ DETECTION_EVENT : produces
+    DETECTION_EVENT ||--o{ ALERT : triggers
+    USER ||--o{ ALERT : receives
+```
 
-- 실시간 스트리밍 입력 처리
-- CCTV 장비 또는 RTSP 연동
-- 모바일 알림 또는 외부 메신저 알림
-- 모델 성능 개선 및 재학습 파이프라인
-- 이벤트 영상 클립 자동 저장
-- 관리자 권한 분리
+- 모든 엔티티는 `created_at`, `updated_at`, `deleted`(soft delete 플래그) 보유.
+- `VideoSource`는 soft delete 적용(`@SQLRestriction`), 삭제 시 `deleted=true`.
+- `Alert.detection_event_id`는 nullable(테스트/시스템 알림).
+
+## 보안 / 공개 경로
+
+- 공개: `/api/health`, `/api/auth/google`, `POST /api/analysis/callback`, Swagger, 정적 페이지(`/`, `/google-login.html`).
+- 그 외 전부 인증 필요. 401=`UNAUTHORIZED`, 403=`FORBIDDEN` (통일 에러 포맷).
+- CORS 허용 origin: `http://localhost:3000`, `http://localhost:5173` (프론트 도메인 추가 시 `SecurityConfig` 수정).
+
+## 배포 구성
+
+- 로컬: `docker-compose.yml`로 MySQL(Docker) + 백엔드. 백엔드는 IntelliJ 또는 컨테이너 실행.
+- 운영(목표): 백엔드 Docker 이미지(EC2/ECS 등) + 관리형 MySQL(RDS). 비밀값은 환경변수/시크릿으로 주입.
+- 스키마: 개발은 `ddl-auto: update`, 운영은 `validate` + 마이그레이션 도구(Flyway 등) 권장.
+
+## 변경 이력(이번 작업 반영)
+- 인증: 이메일/비밀번호 → **구글 OIDC + JWT + Spring Security** 로 전환
+- 도메인: **scenario 제거**, AI 연동을 실제 `/predict/video`(normal/abnormal) 스펙에 맞춤
+- 추가: `/auth/me`, `/auth/logout`, video 상세/수정/삭제, dashboard timeline/severity, alerts/test
+- 품질: soft delete, 통일 에러 포맷, 통합 테스트

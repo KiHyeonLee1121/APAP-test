@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>APAP 구글 로그인</title>
+  <!-- Google Identity Services -->
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 40px auto; padding: 0 16px; color: #1a1a1a; }
+    h1 { font-size: 20px; }
+    label { display: block; margin: 12px 0 4px; font-weight: 600; font-size: 14px; }
+    input { width: 100%; padding: 8px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 6px; }
+    button { margin-top: 12px; padding: 8px 14px; border: 0; border-radius: 6px; background: #1a73e8; color: #fff; cursor: pointer; }
+    button.secondary { background: #555; }
+    pre { background: #f5f5f5; padding: 12px; border-radius: 6px; overflow: auto; font-size: 13px; }
+    .hint { color: #666; font-size: 13px; line-height: 1.5; }
+    #buttonHost { margin-top: 12px; }
+  </style>
+</head>
+<body>
+  <h1>APAP 구글 로그인</h1>
+
+  <p class="hint">
+    이 페이지는 백엔드 서버(8080)가 직접 서빙하므로 <b>별도 정적 서버나 추가 포트가 필요 없습니다.</b><br>
+    1) Google Cloud Console OAuth 클라이언트의 "승인된 JavaScript 원본"에 <code>http://localhost:8080</code>이 등록돼 있어야 합니다.<br>
+    2) 발급받은 <b>Client ID</b>를 입력하고 <b>초기화</b> → <b>구글 로그인</b> 버튼으로 로그인하세요.<br>
+    같은 출처(same-origin)라 로그인 요청에 CORS 설정이 필요 없습니다.
+  </p>
+
+  <label>Google Client ID</label>
+  <input id="clientId" placeholder="xxxxxxxx.apps.googleusercontent.com" />
+
+  <button id="initBtn">초기화 (로그인 버튼 표시)</button>
+
+  <div id="buttonHost"></div>
+
+  <label>결과</label>
+  <pre id="output">아직 로그인하지 않았습니다.</pre>
+
+  <button id="meBtn" class="secondary">발급된 토큰으로 /api/auth/me 호출</button>
+
+  <script>
+    let accessToken = null;
+
+    function log(obj) {
+      document.getElementById('output').textContent =
+        typeof obj === 'string' ? obj : JSON.stringify(obj, null, 2);
+    }
+
+    async function handleCredentialResponse(response) {
+      // response.credential 이 구글 OIDC ID 토큰(JWT). 같은 출처이므로 상대 경로로 호출한다.
+      try {
+        const res = await fetch('/api/auth/google', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ idToken: response.credential })
+        });
+        const data = await res.json();
+        if (data && data.data && data.data.accessToken) {
+          accessToken = data.data.accessToken;
+        }
+        log({ status: res.status, body: data });
+      } catch (e) {
+        log('요청 실패: ' + e + '\n(백엔드 실행 여부를 확인하세요)');
+      }
+    }
+
+    document.getElementById('initBtn').addEventListener('click', () => {
+      const clientId = document.getElementById('clientId').value.trim();
+      if (!clientId) { log('Client ID를 입력하세요.'); return; }
+      if (!window.google || !google.accounts) { log('구글 스크립트 로딩 중입니다. 잠시 후 다시 시도하세요.'); return; }
+
+      google.accounts.id.initialize({
+        client_id: clientId,
+        callback: handleCredentialResponse
+      });
+      const host = document.getElementById('buttonHost');
+      host.innerHTML = '';
+      google.accounts.id.renderButton(host, { theme: 'outline', size: 'large', text: 'signin_with' });
+      log('초기화 완료. 위의 구글 버튼으로 로그인하세요.');
+    });
+
+    document.getElementById('meBtn').addEventListener('click', async () => {
+      if (!accessToken) { log('먼저 로그인해서 accessToken을 발급받으세요.'); return; }
+      try {
+        const res = await fetch('/api/auth/me', {
+          headers: { 'Authorization': 'Bearer ' + accessToken }
+        });
+        const data = await res.json();
+        log({ status: res.status, endpoint: '/api/auth/me', body: data });
+      } catch (e) {
+        log('요청 실패: ' + e);
+      }
+    });
+  </script>
+</body>
+</html>
