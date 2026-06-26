@@ -1,0 +1,47 @@
+.cctv-container {
+  width: 100%;
+  min-height: 100vh;
+
+  background: #e4fff7;
+
+  padding: 1vw;
+}
+
+.top-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+
+  margin-bottom: 10px;
+}
+
+.back-button {
+  border: none;
+  background: transparent;
+
+  font-size: clamp(24px, 2vw, 36px);
+
+  cursor: pointer;
+}
+
+.top-logo {
+  width: clamp(60px, 5vw, 90px);
+}
+
+.camera-wrapper {
+  width: 100%;
+  height: calc(100vh - 90px);
+
+  background: white;
+
+  border-radius: 18px;
+
+  padding: 1vw;
+}
+
+.camera-video {
+  width: 100%;
+  height: 100%;
+
+  object-fit: cover;
+}
