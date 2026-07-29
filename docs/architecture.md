@@ -109,7 +109,24 @@ erDiagram
 - 운영(목표): 백엔드 Docker 이미지(EC2/ECS 등) + 관리형 MySQL(RDS). 비밀값은 환경변수/시크릿으로 주입.
 - 스키마: 개발은 `ddl-auto: update`, 운영은 `validate` + 마이그레이션 도구(Flyway 등) 권장.
 
-## 변경 이력(이번 작업 반영)
+## 케이스 기반 알림 흐름 (7월 회의 반영)
+
+```text
+[시드] 감지 케이스 4종(한강 교각/식당 식권/영화관 입장/마트 은닉) 자동 등록
+사용자 → POST /api/user-cases (케이스 구독, out_msg 응답)
+AI 판정 ABNORMAL → DetectionEvent 저장 → Alert 생성 시
+  유저의 활성 케이스가 있으면 그 케이스의 out_msg를 알림 메시지로 사용
+  (없으면 기본 메시지 유지)
+로그인 시 login_history에 (user_id, 로그인 시각) 자동 기록
+```
+
+## ⚠️ 기술스택 확인 필요 (팀 확정 요청)
+
+- 7월 회의록에는 BE가 `fastapi`, RDB가 `미정(postgres 추천)`으로 표기되어 있으나, **현 구현은 Spring Boot 3.3 + MySQL 8로 dev에 병합·동작·테스트 완료 상태**다.
+- AGENTS 규칙에 따라 임의 재작성하지 않았으며, 팀이 fastapi/postgres로 확정할 경우 **별도 마이그레이션 과제로 분리**해 진행한다.
+
+## 변경 이력
+- (7월 회의 반영) **로그인 이력**(`login_history`) 기록/조회, **감지 케이스 도메인**(`detection_cases`, `user_cases`) + 시드 4종 + 알림 out_msg 연계, AI 계약(Anomaly Detection 후에도 동일) 확인
 - 인증: 이메일/비밀번호 → **구글 OIDC + JWT + Spring Security** 로 전환
 - 도메인: **scenario 제거**, AI 연동을 실제 `/predict/video`(normal/abnormal) 스펙에 맞춤
 - 추가: `/auth/me`, `/auth/logout`, video 상세/수정/삭제, dashboard timeline/severity, alerts/test

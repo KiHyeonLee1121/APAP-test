@@ -17,6 +17,27 @@ Content-Type: application/json
 GET http://localhost:8080/api/auth/me
 Authorization: Bearer {{accessToken}}
 
+### 2-1. 내 로그인 이력 (최신순)
+GET http://localhost:8080/api/auth/login-history
+Authorization: Bearer {{accessToken}}
+
+### 2-2. 감지 케이스 목록 (시드 4종)
+GET http://localhost:8080/api/cases
+Authorization: Bearer {{accessToken}}
+
+### 2-3. 유저 케이스 등록 (MANAGER 이상, 응답에 outMsg 포함)
+POST http://localhost:8080/api/user-cases
+Content-Type: application/json
+Authorization: Bearer {{accessToken}}
+
+{
+  "caseId": 1
+}
+
+### 2-4. 내 케이스 목록
+GET http://localhost:8080/api/user-cases
+Authorization: Bearer {{accessToken}}
+
 ### 3. Create video source (MANAGER 이상)
 POST http://localhost:8080/api/videos
 Content-Type: application/json
