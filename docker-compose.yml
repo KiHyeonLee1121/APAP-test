@@ -23,6 +23,10 @@ services:
       DB_USER: abnormal_user
       DB_PASSWORD: abnormal_password
       AI_SERVER_URL: http://ai-server:8000
+      # 영상 저장 모드: local(기본) / s3. EC2 배포 시 s3로 전환 (자격증명은 인스턴스 Role 사용, 키 주입 없음)
+      APP_STORAGE_MODE: local
+      S3_BUCKET: project10-86-virg-apap-media
+      AWS_REGION: us-east-1
     depends_on:
       - database
       - ai-server

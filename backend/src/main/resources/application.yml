@@ -21,7 +21,15 @@ spring:
 apap:
   ai-server-url: ${AI_SERVER_URL:http://localhost:8000}
   base-url: ${BASE_URL:http://localhost:8080}
+  # local 모드에서 업로드 파일이 저장되는 루트 디렉터리
   upload-dir: uploads
+  storage:
+    # local(기본): uploads/ 디렉터리 저장 — 로컬 개발용 (이 계정은 액세스 키 발급 불가라 로컬 S3 접근 불가)
+    # s3: AWS S3 저장 — EC2 인스턴스 프로파일 Role 필요, sourceUrl에 S3 키(videos/{uuid}-{filename}) 저장
+    mode: ${APP_STORAGE_MODE:local}
+    s3:
+      bucket: ${S3_BUCKET:project10-86-virg-apap-media}
+      region: ${AWS_REGION:us-east-1}
   google:
     # 구글 OIDC 클라이언트 ID (Google Cloud Console > OAuth 2.0 클라이언트 ID)
     client-id: ${GOOGLE_CLIENT_ID:}
