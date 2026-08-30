@@ -180,10 +180,29 @@ http://localhost:8080/swagger-ui/index.html
 
 **EC2 배포 후 검증 체크리스트:**
 
-1. EC2에 인스턴스 프로파일 Role(`SafeInstanceProfile-project10-86-virg`)이 부착되어 있는지 확인
-2. `APP_STORAGE_MODE=s3`로 백엔드 기동 → 에러 없이 시작되는지 확인
-3. `POST /api/videos/upload`로 영상 업로드 → 응답 `sourceUrl`이 `videos/{uuid}-{filename}` 형식인지 확인
-4. S3 콘솔(us-east-1)에서 해당 키로 객체가 생성되었는지 확인
-5. `POST /api/analysis/jobs`로 분석 요청 → AI 서버가 해당 키로 S3에서 영상을 읽어 응답하는지 확인 (AI 서버 측에도 S3 읽기 권한 필요)
+1. ✅ EC2에 인스턴스 프로파일 Role(`SafeRole-project10-86-virg`)이 부착되어 있는지 확인
+2. ✅ `APP_STORAGE_MODE=s3`로 백엔드 기동 → 에러 없이 시작되는지 확인
+3. ✅ `POST /api/videos/upload`로 영상 업로드 → 응답 `sourceUrl`이 `videos/{uuid}-{filename}` 형식인지 확인
+4. ✅ S3 버킷(us-east-1)에 해당 키로 객체가 생성되었는지 확인
+5. ⬜ `POST /api/analysis/jobs`로 분석 요청 → AI 서버가 해당 키로 S3에서 영상을 읽어 응답하는지 확인 (**AI 서버 측에도 S3 읽기 권한 필요 — AI팀 준비 후 검증**)
+
+> 2026-08-31 EC2(t3.small, us-east-1)에 배포해 1~4번 검증 완료. 업로드 API 응답 `sourceUrl`이 `videos/{uuid}-test-video.mp4`로 반환되고 S3에 실제 객체(2048 bytes, `video/mp4`)가 생성되는 것을 확인했습니다. 5번은 AI 서버 배포 후 진행합니다.
+
+### 운영 서버 실행 방식 (EC2)
+
+백엔드는 systemd 서비스로 등록되어 있어 인스턴스를 재부팅해도 자동 실행됩니다.
+
+```bash
+sudo systemctl status apap-backend     # 상태 확인
+sudo systemctl restart apap-backend    # 재시작
+sudo journalctl -u apap-backend -f     # 실시간 로그
+```
+
+- 환경변수 파일: `/etc/apap/backend.env` (600 권한, `JWT_SECRET` 등 비밀값 포함 — 깃에 올리지 않음)
+- 실행 파일: `/home/ubuntu/apap-backend.jar`
+- DB: EC2 로컬 MySQL, 애플리케이션 전용 계정 `apap` 사용(root 아님)
+- **새 버전 배포**: 로컬에서 `./mvnw -DskipTests package` → jar를 서버로 전송 → `sudo systemctl restart apap-backend`
+
+> 구글 로그인을 서버에서 쓰려면 `/etc/apap/backend.env`의 `GOOGLE_CLIENT_ID`를 채우고, 구글 콘솔의 **승인된 JavaScript 원본**에 서버 주소(`http://<퍼블릭IP>:8080`)를 추가한 뒤 서비스를 재시작해야 합니다.
 
 **주의**: 라벨/케이스 등 분류 정보는 S3 키에 넣지 않습니다. 분류는 DB 컬럼으로만 관리하며, AI 학습용 목록 순회는 `videos/` 프리픽스 기준으로 수행합니다.
