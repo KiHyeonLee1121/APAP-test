@@ -113,15 +113,15 @@ VideoResponse:
 |---|---|---|---|
 | POST | `/api/videos` | MANAGER+ | 영상 소스 등록. body `{type, name, sourceUrl}` |
 | POST | `/api/videos/upload` | MANAGER+ | 파일 업로드(multipart `file`) → 저장 후 VideoSource 생성 |
+| GET | `/api/videos` | 인증 | 내 영상 목록 |
+| GET | `/api/videos/{videoId}` | 인증(소유자) | 상세 |
+| PATCH | `/api/videos/{videoId}` | MANAGER+(소유자) | 수정. body `{type, name, sourceUrl, status}` |
+| DELETE | `/api/videos/{videoId}` | MANAGER+(소유자) | soft delete |
 
 `sourceUrl` 의미 (저장 모드에 따라 다름):
 - **local 모드(기본)**: 업로드 디렉터리 기준 파일 경로 (예: `uploads/videos/{uuid}-{filename}`)
 - **s3 모드(운영)**: S3 객체 키 `videos/{uuid}-{filename}` — 풀 URL이 아닌 **키만** 저장. AI 서버는 이 키로 S3에서 직접 읽는다
 - 라벨/케이스 등 분류 정보는 키/경로에 넣지 않고 **DB 컬럼으로만** 관리한다 (AI 학습 시 S3 목록 순회와 무관하게 유지)
-| GET | `/api/videos` | 인증 | 내 영상 목록 |
-| GET | `/api/videos/{videoId}` | 인증(소유자) | 상세 |
-| PATCH | `/api/videos/{videoId}` | MANAGER+(소유자) | 수정. body `{type, name, sourceUrl, status}` |
-| DELETE | `/api/videos/{videoId}` | MANAGER+(소유자) | soft delete |
 
 > 타인 소유 리소스 접근 시 정보 노출 방지를 위해 `404 NOT_FOUND` 반환.
 
