@@ -1,40 +1,111 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import '../styles/AlertPage.css';
 import logo from '../assets/png/APAP로고.png';
+import { fetchAlerts, markAlertAsRead } from '../services/alertApi';
+
+const ALERT_STATUS_LABELS = {
+  PENDING: '대기',
+  SENT: '미확인',
+  FAILED: '실패',
+  READ: '읽음',
+};
 
 function AlertPage() {
   const navigate = useNavigate();
 
-  const [alerts, setAlerts] = useState([
-    '한강 철교 위 난간에 매달린 사람 발견',
-    '한강 철교 위 뛰어내린 사람 발견',
-    '한강 철교 무단투기하는 사람 발견',
-    '한강 철교 위 같은 자리 배회하는 사람 발견',
-    '한강 철교 난간에 손 올린 사람 발견',
-    'ATM 앞에서 장시간 통화하며 송금하는 사람 발견',
-    '횡단보도 위 쓰러진 사람 발견',
-  ]);
-
+  const [alerts, setAlerts] = useState([]);
   const [selectedAlerts, setSelectedAlerts] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
 
-  const toggleSelect = (index) => {
-    if (selectedAlerts.includes(index)) {
-      setSelectedAlerts(selectedAlerts.filter((item) => item !== index));
+  useEffect(() => {
+    let isCancelled = false;
+
+    fetchAlerts()
+      .then((loadedAlerts) => {
+        if (!isCancelled) {
+          setAlerts(loadedAlerts);
+        }
+      })
+      .catch((error) => {
+        if (!isCancelled) {
+          setErrorMessage(error.message || '알림 내역을 불러오지 못했습니다.');
+        }
+      })
+      .finally(() => {
+        if (!isCancelled) {
+          setIsLoading(false);
+        }
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
+
+  const toggleSelect = (alertId) => {
+    if (selectedAlerts.includes(alertId)) {
+      setSelectedAlerts(selectedAlerts.filter((item) => item !== alertId));
     } else {
-      setSelectedAlerts([...selectedAlerts, index]);
+      setSelectedAlerts([...selectedAlerts, alertId]);
     }
   };
 
-  const deleteSelected = () => {
-    setAlerts(alerts.filter((_, index) => !selectedAlerts.includes(index)));
+  const markSelectedAsRead = async () => {
+    if (selectedAlerts.length === 0) {
+      return;
+    }
 
-    setSelectedAlerts([]);
+    setIsUpdating(true);
+    setErrorMessage('');
+
+    try {
+      const readAlerts = await Promise.all(
+        selectedAlerts.map((alertId) => markAlertAsRead(alertId)),
+      );
+      const readAlertMap = new Map(readAlerts.map((alert) => [alert.id, alert]));
+
+      setAlerts((currentAlerts) =>
+        currentAlerts.map((alert) => readAlertMap.get(alert.id) || alert),
+      );
+      setSelectedAlerts([]);
+    } catch (error) {
+      setErrorMessage(error.message || '선택한 알림을 읽음 처리하지 못했습니다.');
+    } finally {
+      setIsUpdating(false);
+    }
   };
 
-  const deleteAll = () => {
-    setAlerts([]);
+  const markAllAsRead = async () => {
+    const unreadAlertIds = alerts
+      .filter((alert) => alert.status !== 'READ')
+      .map((alert) => alert.id);
+
+    if (unreadAlertIds.length === 0) {
+      return;
+    }
+
+    setIsUpdating(true);
+    setErrorMessage('');
+
+    try {
+      const readAlerts = await Promise.all(
+        unreadAlertIds.map((alertId) => markAlertAsRead(alertId)),
+      );
+      const readAlertMap = new Map(readAlerts.map((alert) => [alert.id, alert]));
+
+      setAlerts((currentAlerts) =>
+        currentAlerts.map((alert) => readAlertMap.get(alert.id) || alert),
+      );
+    } catch (error) {
+      setErrorMessage(error.message || '전체 알림을 읽음 처리하지 못했습니다.');
+    } finally {
+      setIsUpdating(false);
+    }
+
     setSelectedAlerts([]);
   };
 
@@ -53,24 +124,45 @@ function AlertPage() {
           <h1>알림 내역</h1>
 
           <div className="alert-buttons">
-            <button onClick={deleteAll}>전체 삭제</button>
+            <button
+              onClick={markAllAsRead}
+              disabled={isLoading || isUpdating || alerts.length === 0}
+            >
+              전체 읽음
+            </button>
 
-            <button onClick={deleteSelected}>선택 삭제</button>
+            <button
+              onClick={markSelectedAsRead}
+              disabled={isLoading || isUpdating || selectedAlerts.length === 0}
+            >
+              선택 읽음
+            </button>
           </div>
         </div>
 
         <div className="alert-list">
-          {alerts.map((alert, index) => (
-            <div
-              key={index}
-              className={`alert-item ${
-                selectedAlerts.includes(index) ? 'selected' : ''
-              }`}
-              onClick={() => toggleSelect(index)}
-            >
-              {alert}
-            </div>
-          ))}
+          {isLoading ? (
+            <div className="alert-empty-state">알림을 불러오는 중입니다.</div>
+          ) : errorMessage ? (
+            <div className="alert-empty-state is-error">{errorMessage}</div>
+          ) : alerts.length === 0 ? (
+            <div className="alert-empty-state">알림 내역이 없습니다.</div>
+          ) : (
+            alerts.map((alert) => (
+              <div
+                key={alert.id}
+                className={`alert-item ${
+                  selectedAlerts.includes(alert.id) ? 'selected' : ''
+                } ${alert.status === 'READ' ? 'is-read' : ''}`}
+                onClick={() => toggleSelect(alert.id)}
+              >
+                <span className="alert-message">{alert.message}</span>
+                <span className="alert-status">
+                  {ALERT_STATUS_LABELS[alert.status] || alert.status}
+                </span>
+              </div>
+            ))
+          )}
         </div>
       </div>
     </div>
