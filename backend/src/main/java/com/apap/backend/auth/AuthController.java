@@ -14,7 +14,9 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.bind.annotation.DeleteMapping;
+
+import java.time.LocalDateTime;
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -23,12 +25,14 @@ public class AuthController {
     private final UserRepository userRepository;
     private final GoogleTokenVerifier googleTokenVerifier;
     private final JwtTokenProvider jwtTokenProvider;
+    private final LoginHistoryRepository loginHistoryRepository;
 
     public AuthController(UserRepository userRepository, GoogleTokenVerifier googleTokenVerifier,
-                          JwtTokenProvider jwtTokenProvider) {
+                          JwtTokenProvider jwtTokenProvider, LoginHistoryRepository loginHistoryRepository) {
         this.userRepository = userRepository;
         this.googleTokenVerifier = googleTokenVerifier;
         this.jwtTokenProvider = jwtTokenProvider;
+        this.loginHistoryRepository = loginHistoryRepository;
     }
 
     /**
@@ -41,12 +45,12 @@ public class AuthController {
         GoogleAccount account = googleTokenVerifier.verify(request.idToken());
         String displayName = StringUtils.hasText(account.name()) ? account.name() : account.email();
 
-        User user = userRepository.findByGoogleSubAndDeletedFalse(account.sub())
+        User user = userRepository.findByGoogleSub(account.sub())
                 .map(found -> {
                     found.syncProfile(displayName, account.pictureUrl());
                     return found;
                 })
-                .orElseGet(() -> userRepository.findByEmailAndDeletedFalse(account.email())
+                .orElseGet(() -> userRepository.findByEmail(account.email())
                         .map(existing -> {
                             // 이전에 가입된 이메일이면 해당 계정에 구글 계정을 연결
                             existing.linkGoogle(account.sub());
@@ -62,14 +66,27 @@ public class AuthController {
 
         User savedUser = userRepository.save(user);
 
+        // 로그인 이력 기록 (7월 회의: user_id + 로그인 시각)
+        loginHistoryRepository.save(new LoginHistory(savedUser));
+
         String accessToken = jwtTokenProvider.createToken(savedUser);
         return ApiResponse.ok(new LoginResponse(accessToken, UserResponse.from(savedUser)), "로그인 성공");
+    }
+
+    /** 내 로그인 이력 조회(최신순). 본인 이력만 조회 가능. */
+    @GetMapping("/login-history")
+    public ApiResponse<List<LoginHistoryResponse>> loginHistory(@AuthenticationPrincipal AuthUser authUser) {
+        List<LoginHistoryResponse> history = loginHistoryRepository.findAllByUserIdOrderByIdDesc(authUser.id())
+                .stream()
+                .map(LoginHistoryResponse::from)
+                .toList();
+        return ApiResponse.ok(history);
     }
 
     /** 현재 로그인 사용자 정보 */
     @GetMapping("/me")
     public ApiResponse<UserResponse> me(@AuthenticationPrincipal AuthUser authUser) {
-        User user = userRepository.findByIdAndDeletedFalse(authUser.id())
+        User user = userRepository.findById(authUser.id())
                 .orElseThrow(() -> new EntityNotFoundException("사용자를 찾을 수 없습니다."));
         return ApiResponse.ok(UserResponse.from(user));
     }
@@ -86,6 +103,20 @@ public class AuthController {
     public record GoogleLoginRequest(
             @NotBlank String idToken
     ) {
+    }
+
+    public record LoginHistoryResponse(
+            Long id,
+            Long userId,
+            LocalDateTime loggedInAt
+    ) {
+        static LoginHistoryResponse from(LoginHistory history) {
+            return new LoginHistoryResponse(
+                    history.getId(),
+                    history.getUser().getId(),
+                    history.getLoggedInAt()
+            );
+        }
     }
 
     public record LoginResponse(
@@ -110,16 +141,5 @@ public class AuthController {
                     user.getRole().name()
             );
         }
-    }
-    /* 회원 탈퇴*/
-    @DeleteMapping("/me")
-    public ApiResponse<Void> withdraw(@AuthenticationPrincipal AuthUser authUser) {
-        User user = userRepository.findByIdAndDeletedFalse(authUser.id())
-                .orElseThrow(() -> new EntityNotFoundException("사용자를 찾을 수 없습니다."));
-
-        user.withdraw();
-        userRepository.save(user);
-
-        return ApiResponse.ok(null, "회원 탈퇴가 완료되었습니다.");
     }
 }

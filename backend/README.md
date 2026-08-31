@@ -39,6 +39,11 @@ cp .env.example .env
 | `GOOGLE_CLIENT_ID` | 구글 OAuth 2.0 클라이언트 ID (구글 로그인용) | — |
 | `JWT_SECRET` | JWT(HS256) 서명 비밀키. 운영은 32바이트 이상 필수 (미설정 시 부팅마다 임시 키 생성) | — |
 | `JWT_EXPIRATION_MS` | 액세스 토큰 만료 시간(ms) | `86400000` (24h) |
+| `APP_STORAGE_MODE` | 영상 저장 모드. `local`(uploads/ 디렉터리) 또는 `s3`(AWS S3) | `local` |
+| `S3_BUCKET` | S3 버킷 이름 (s3 모드에서만 사용) | `project10-86-virg-apap-media` |
+| `AWS_REGION` | S3 리전 (s3 모드, 계정 정책상 us-east-1 고정) | `us-east-1` |
+
+> **S3 자격증명 관련**: 액세스 키/시크릿 환경변수는 사용하지 않습니다. 팀 AWS 계정은 액세스 키 발급이 불가능하며, EC2에 부착된 인스턴스 프로파일 Role로 자동 인증됩니다. 따라서 **로컬에서는 s3 모드가 동작하지 않고**, 기본값인 local 모드로 개발합니다.
 
 ### 2. MySQL 준비
 
@@ -58,6 +63,7 @@ CREATE DATABASE abnormal_alarm CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 > - `users`: 구글 로그인 도입으로 `password_hash` 제거, `google_sub`(NOT NULL, unique)·`picture_url` 추가
 > - 전 엔티티에 soft delete용 `deleted` 컬럼 추가(영상은 삭제 시 `deleted=true`로만 처리)
 > - `alerts.detection_event_id`가 nullable로 변경(테스트/시스템 알림 지원)
+> - (7월 회의) 신규 테이블 `login_history`(로그인 이력), `detection_cases`·`user_cases`(감지 케이스 구독) — `ddl-auto: update`로 자동 생성되며, 케이스 4종은 서버 기동 시 자동 시드됨
 
 ### 3. 구글 OAuth 클라이언트 ID 준비
 
@@ -142,6 +148,7 @@ http://localhost:8080/swagger-ui/index.html
 | `auth` | 구글 로그인(OIDC 검증), JWT 발급/검증, 인증 필터, 사용자 find-or-create |
 | `user` | 사용자 계정, 권한(ADMIN/MANAGER/VIEWER) |
 | `video` | 영상 소스(UPLOAD/CCTV/EDGE_GATEWAY) 관리, soft delete |
+| `storage` | 업로드 저장소 추상화 — local(파일)/s3(AWS S3) 모드 분기, 키 형식 `videos/{uuid}-{filename}` |
 | `analysis` | AI 서버 분석 요청, 콜백 수신, AnalysisJob 상태 관리 |
 | `event` | AI 결과로 생성된 DetectionEvent 저장/조회 |
 | `alert` | 이벤트 기반 알림 이력 |
@@ -163,3 +170,40 @@ http://localhost:8080/swagger-ui/index.html
 3. 백엔드가 `prediction`을 DetectionEventType(NORMAL/ABNORMAL)으로, `confidence`를 Severity로 변환해 DetectionEvent 저장. ABNORMAL이면 Alert 생성
 
 보조 흐름(콜백): 엣지 디바이스(CCTV/카메라)가 직접 분석 결과를 보내는 경우 `POST /api/analysis/callback`으로 DetectionEvent 목록을 전송합니다. AI 모델 고도화 시 FALL/INTRUSION/ANOMALOUS 같은 이벤트 타입도 이 경로로 수용합니다.
+
+> `video_path`에는 `VideoSource.sourceUrl`이 그대로 전달됩니다. local 모드에선 파일 경로, s3 모드에선 S3 객체 키(`videos/{uuid}-{filename}`)이며, s3 모드에서는 AI 서버가 이 키로 버킷에서 영상을 직접 읽습니다.
+
+## S3 저장소 전환 (운영 배포 시)
+
+7월 회의 결정에 따라 운영에서는 영상을 S3에 저장합니다. 로컬에서는 검증이 불가능하므로(액세스 키 발급 불가 계정) EC2 배포 후 아래 체크리스트로 확인합니다.
+
+**전환 방법**: 환경변수 `APP_STORAGE_MODE=s3` 설정 후 재기동 (버킷/리전 기본값: `project10-86-virg-apap-media` / `us-east-1`)
+
+**EC2 배포 후 검증 체크리스트:**
+
+1. ✅ EC2에 인스턴스 프로파일 Role(`SafeRole-project10-86-virg`)이 부착되어 있는지 확인
+2. ✅ `APP_STORAGE_MODE=s3`로 백엔드 기동 → 에러 없이 시작되는지 확인
+3. ✅ `POST /api/videos/upload`로 영상 업로드 → 응답 `sourceUrl`이 `videos/{uuid}-{filename}` 형식인지 확인
+4. ✅ S3 버킷(us-east-1)에 해당 키로 객체가 생성되었는지 확인
+5. ⬜ `POST /api/analysis/jobs`로 분석 요청 → AI 서버가 해당 키로 S3에서 영상을 읽어 응답하는지 확인 (**AI 서버 측에도 S3 읽기 권한 필요 — AI팀 준비 후 검증**)
+
+> 2026-08-31 EC2(t3.small, us-east-1)에 배포해 1~4번 검증 완료. 업로드 API 응답 `sourceUrl`이 `videos/{uuid}-test-video.mp4`로 반환되고 S3에 실제 객체(2048 bytes, `video/mp4`)가 생성되는 것을 확인했습니다. 5번은 AI 서버 배포 후 진행합니다.
+
+### 운영 서버 실행 방식 (EC2)
+
+백엔드는 systemd 서비스로 등록되어 있어 인스턴스를 재부팅해도 자동 실행됩니다.
+
+```bash
+sudo systemctl status apap-backend     # 상태 확인
+sudo systemctl restart apap-backend    # 재시작
+sudo journalctl -u apap-backend -f     # 실시간 로그
+```
+
+- 환경변수 파일: `/etc/apap/backend.env` (600 권한, `JWT_SECRET` 등 비밀값 포함 — 깃에 올리지 않음)
+- 실행 파일: `/home/ubuntu/apap-backend.jar`
+- DB: EC2 로컬 MySQL, 애플리케이션 전용 계정 `apap` 사용(root 아님)
+- **새 버전 배포**: 로컬에서 `./mvnw -DskipTests package` → jar를 서버로 전송 → `sudo systemctl restart apap-backend`
+
+> 구글 로그인을 서버에서 쓰려면 `/etc/apap/backend.env`의 `GOOGLE_CLIENT_ID`를 채우고, 구글 콘솔의 **승인된 JavaScript 원본**에 서버 주소(`http://<퍼블릭IP>:8080`)를 추가한 뒤 서비스를 재시작해야 합니다.
+
+**주의**: 라벨/케이스 등 분류 정보는 S3 키에 넣지 않습니다. 분류는 DB 컬럼으로만 관리하며, AI 학습용 목록 순회는 `videos/` 프리픽스 기준으로 수행합니다.

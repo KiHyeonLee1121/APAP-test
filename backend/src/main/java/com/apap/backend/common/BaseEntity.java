@@ -43,8 +43,4 @@ public abstract class BaseEntity {
     public boolean isDeleted() {
         return deleted;
     }
-
-    protected void markDeleted() {
-        this.deleted = true;
-    }
 }

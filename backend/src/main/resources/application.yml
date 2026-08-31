@@ -2,15 +2,13 @@ server:
   port: 8080
 
 spring:
-  config:
-    import: optional:file:.env[.properties]
   application:
     name: apap-backend
   datasource:
     url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:abnormal_alarm}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul
     driver-class-name: com.mysql.cj.jdbc.Driver
     username: ${DB_USERNAME:root}
-    password: ${DB_PASSWORD:}
+    password: ${DB_PASSWORD:APAP2026}
   jpa:
     hibernate:
       ddl-auto: update
@@ -23,12 +21,20 @@ spring:
 apap:
   ai-server-url: ${AI_SERVER_URL:http://localhost:8000}
   base-url: ${BASE_URL:http://localhost:8080}
+  # local 모드에서 업로드 파일이 저장되는 루트 디렉터리
   upload-dir: uploads
+  storage:
+    # local(기본): uploads/ 디렉터리 저장 — 로컬 개발용 (이 계정은 액세스 키 발급 불가라 로컬 S3 접근 불가)
+    # s3: AWS S3 저장 — EC2 인스턴스 프로파일 Role 필요, sourceUrl에 S3 키(videos/{uuid}-{filename}) 저장
+    mode: ${APP_STORAGE_MODE:local}
+    s3:
+      bucket: ${S3_BUCKET:project10-86-virg-apap-media}
+      region: ${AWS_REGION:us-east-1}
   google:
-    # Google OIDC client ID (Google Cloud Console > OAuth 2.0 Client ID)
+    # 구글 OIDC 클라이언트 ID (Google Cloud Console > OAuth 2.0 클라이언트 ID)
     client-id: ${GOOGLE_CLIENT_ID:}
   jwt:
-    # JWT signing secret for HS256. Use at least 32 bytes in production.
+    # JWT 서명 비밀키 (HS256). 운영에서는 반드시 32바이트 이상으로 설정. 비우면 개발용 임시 키가 매 부팅마다 생성됨
     secret: ${JWT_SECRET:}
-    # Access token expiration time in milliseconds. Default is 24 hours.
+    # 액세스 토큰 만료 시간(ms). 기본 24시간
     expiration-ms: ${JWT_EXPIRATION_MS:86400000}
