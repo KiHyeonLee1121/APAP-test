@@ -2,12 +2,12 @@ package com.apap.backend.video;
 
 import com.apap.backend.auth.AuthUser;
 import com.apap.backend.common.ApiResponse;
+import com.apap.backend.storage.StorageService;
 import com.apap.backend.user.User;
 import com.apap.backend.user.UserRepository;
 import jakarta.persistence.EntityNotFoundException;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -21,10 +21,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.List;
-import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/videos")
@@ -32,16 +29,16 @@ public class VideoController {
 
     private final VideoSourceRepository videoSourceRepository;
     private final UserRepository userRepository;
-    private final Path uploadDir;
+    private final StorageService storageService;
 
     public VideoController(
             VideoSourceRepository videoSourceRepository,
             UserRepository userRepository,
-            @Value("${apap.upload-dir}") String uploadDir
+            StorageService storageService
     ) {
         this.videoSourceRepository = videoSourceRepository;
         this.userRepository = userRepository;
-        this.uploadDir = Path.of(uploadDir);
+        this.storageService = storageService;
     }
 
     @PostMapping
@@ -64,17 +61,15 @@ public class VideoController {
         User user = userRepository.findById(authUser.id())
                 .orElseThrow(() -> new EntityNotFoundException("사용자를 찾을 수 없습니다."));
 
-        Files.createDirectories(uploadDir);
         String originalName = file.getOriginalFilename() == null ? "video" : file.getOriginalFilename();
-        String savedName = UUID.randomUUID() + "-" + originalName;
-        Path savedPath = uploadDir.resolve(savedName);
-        file.transferTo(savedPath);
+        // 저장 모드(local/s3)에 따라 sourceUrl에 로컬 경로 또는 S3 키가 저장된다.
+        String storedLocation = storageService.store(file);
 
         VideoSource videoSource = new VideoSource(
                 user,
                 VideoSourceType.UPLOAD,
                 originalName,
-                savedPath.toString()
+                storedLocation
         );
         return ApiResponse.ok(VideoResponse.from(videoSourceRepository.save(videoSource)));
     }

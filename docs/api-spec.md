@@ -118,6 +118,11 @@ VideoResponse:
 | PATCH | `/api/videos/{videoId}` | MANAGER+(소유자) | 수정. body `{type, name, sourceUrl, status}` |
 | DELETE | `/api/videos/{videoId}` | MANAGER+(소유자) | soft delete |
 
+`sourceUrl` 의미 (저장 모드에 따라 다름):
+- **local 모드(기본)**: 업로드 디렉터리 기준 파일 경로 (예: `uploads/videos/{uuid}-{filename}`)
+- **s3 모드(운영)**: S3 객체 키 `videos/{uuid}-{filename}` — 풀 URL이 아닌 **키만** 저장. AI 서버는 이 키로 S3에서 직접 읽는다
+- 라벨/케이스 등 분류 정보는 키/경로에 넣지 않고 **DB 컬럼으로만** 관리한다 (AI 학습 시 S3 목록 순회와 무관하게 유지)
+
 > 타인 소유 리소스 접근 시 정보 노출 방지를 위해 `404 NOT_FOUND` 반환.
 
 ---
@@ -236,7 +241,9 @@ AlertResponse:
   { "prediction": "normal|abnormal", "confidence": 0.87, "source": "...", "status": "success", "message": null }
   ```
 - 변환: `abnormal → ABNORMAL`(그 외 `NORMAL`), confidence → severity(`>=0.9` CRITICAL / `>=0.75` HIGH / `>=0.5` MEDIUM / else LOW), `status!=success`면 job `FAILED`.
-- ⚠️ `video_path`는 현재 백엔드 파일시스템 경로다. **AI 서버가 동일 경로(공유 볼륨 등)로 접근 가능해야 한다** — 배포 시 공유 스토리지/URL 방식 합의 필요.
+- `video_path`에는 `VideoSource.sourceUrl` 값이 그대로 전달된다:
+  - local 모드: 백엔드 파일시스템 경로 → AI 서버가 동일 경로(같은 머신/공유 볼륨)로 접근
+  - s3 모드: **S3 객체 키** (`videos/{uuid}-{filename}`) → AI 서버가 버킷(`project10-86-virg-apap-media`, us-east-1)에서 직접 다운로드. AI 측도 EC2 Role 등 S3 읽기 권한 필요
 
 ## 환경변수
 
@@ -248,5 +255,10 @@ AlertResponse:
 | `GOOGLE_CLIENT_ID` | 구글 OAuth 클라이언트 ID | — |
 | `JWT_SECRET` | JWT 서명 키(32바이트+) | (미설정 시 임시키) |
 | `JWT_EXPIRATION_MS` | 토큰 만료(ms) | `86400000` |
+| `APP_STORAGE_MODE` | 영상 저장 모드 `local`/`s3` | `local` |
+| `S3_BUCKET` | S3 버킷 이름 (s3 모드) | `project10-86-virg-apap-media` |
+| `AWS_REGION` | S3 리전 (s3 모드, 계정 정책상 고정) | `us-east-1` |
 
-> 변경 이력: 이메일/비밀번호 인증 제거 → 구글 OIDC + JWT 도입, 시나리오 도메인 제거, soft delete 도입.
+> S3 자격증명 환경변수는 **없다**. 이 AWS 계정은 액세스 키 발급이 불가하며, EC2 인스턴스 프로파일 Role(`SafeInstanceProfile-project10-86-virg`)로 자동 인증한다.
+
+> 변경 이력: 이메일/비밀번호 인증 제거 → 구글 OIDC + JWT 도입, 시나리오 도메인 제거, soft delete 도입, 영상 저장 S3 전환(local/s3 모드 분기).

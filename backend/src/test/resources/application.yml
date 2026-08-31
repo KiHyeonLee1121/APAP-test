@@ -18,7 +18,9 @@ spring:
 apap:
   ai-server-url: http://localhost:18000
   base-url: http://localhost:8080
-  upload-dir: build/test-uploads
+  upload-dir: target/test-uploads
+  storage:
+    mode: local
   google:
     client-id: test-client-id
   jwt:
