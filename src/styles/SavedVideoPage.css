@@ -4,7 +4,7 @@
 
   background: #e4fff7;
 
-  padding: 12px;
+  padding: 24px 30px 34px;
 
   overflow: hidden;
 }
@@ -14,106 +14,182 @@
   justify-content: space-between;
   align-items: center;
 
-  margin-bottom: 12px;
+  height: 64px;
+  margin-bottom: 16px;
 }
 
 .back-button {
   border: none;
   background: transparent;
 
-  font-size: 28px;
+  font-size: 30px;
+  line-height: 1;
 
   cursor: pointer;
 }
 
 .top-logo {
-  width: 90px;
+  width: 150px;
+  height: auto;
 }
 
 .white-wrapper {
   width: 100%;
-  height: calc(100vh - 90px);
+  height: calc(100vh - 138px);
 
   background: white;
 
-  border-radius: 18px;
+  border-radius: 14px;
 
-  padding: 40px;
+  padding: 52px 62px;
 
-  display: flex;
-  gap: 40px;
-
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.12);
 }
 
-.video-section {
-  flex: 1;
+.upload-analysis-box {
+  position: relative;
+
+  width: 100%;
+  height: 100%;
 
   background: #d9d9d9;
-
-  border-radius: 8px;
-
-  padding: 20px;
-
-  position: relative;
 
   overflow: hidden;
 }
 
-.video-section h2 {
+.upload-analysis-box h1 {
   text-align: center;
 
-  font-size: 28px;
+  font-size: 32px;
+  font-weight: 500;
 
-  margin-bottom: 20px;
+  padding-top: 24px;
 }
 
-.video-grid {
-  height: calc(100% - 60px);
+.video-preview-area {
+  position: absolute;
 
-  overflow-y: auto;
+  top: 86px;
+  right: 24px;
+  bottom: 72px;
+  left: 24px;
 
-  display: grid;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 
-  grid-template-columns: repeat(2, 1fr);
-
-  gap: 15px;
+  background: #cfcfcf;
 }
 
-.video-card {
-  background: white;
-
-  border-radius: 8px;
-
-  padding: 8px;
-}
-
-.video-card video {
+.uploaded-video-preview {
   width: 100%;
-  aspect-ratio: 16 / 9;
+  height: 100%;
 
-  object-fit: cover;
+  object-fit: contain;
+
+  background: #111;
 }
 
-.video-card p {
-  margin-top: 6px;
-  text-align: center;
-  font-size: 13px;
+.video-empty-state {
+  color: #555;
+
+  font-size: 20px;
 }
 
-.add-btn {
+.upload-status {
+  position: absolute;
+
+  left: 24px;
+  bottom: 22px;
+
+  max-width: calc(100% - 280px);
+
+  overflow: hidden;
+
+  color: #222;
+
+  font-size: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.upload-status.is-error {
+  color: #c62828;
+}
+
+.video-file-input {
+  display: none;
+}
+
+.video-action-buttons {
   position: absolute;
 
   right: 15px;
   bottom: 15px;
 
-  width: 90px;
-  height: 35px;
+  display: flex;
+  gap: 20px;
+}
 
+.video-action-btn {
   border: none;
+
+  min-width: 78px;
 
   background: black;
   color: white;
 
+  padding: 5px 10px;
+
+  font-size: 20px;
+
   cursor: pointer;
+}
+
+.video-action-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+@media (max-width: 720px) {
+  .saved-video-container {
+    padding: 16px;
+  }
+
+  .white-wrapper {
+    height: calc(100vh - 112px);
+    padding: 24px;
+  }
+
+  .upload-analysis-box h1 {
+    font-size: 24px;
+  }
+
+  .video-preview-area {
+    top: 72px;
+    right: 16px;
+    bottom: 112px;
+    left: 16px;
+  }
+
+  .upload-status {
+    right: 16px;
+    bottom: 70px;
+    left: 16px;
+
+    max-width: none;
+  }
+
+  .video-action-buttons {
+    right: 16px;
+    bottom: 18px;
+    left: 16px;
+
+    justify-content: flex-end;
+    gap: 12px;
+  }
+
+  .video-action-btn {
+    font-size: 18px;
+  }
 }

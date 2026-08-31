@@ -88,7 +88,7 @@ function MainPage() {
             <img src={video} alt="저장된 영상" />
           </div>
 
-          <p className="menu-title">저장된 영상</p>
+          <p className="menu-title">업로드 및 분석</p>
 
           <div className="menu-line"></div>
         </div>

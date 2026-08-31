@@ -31,6 +31,8 @@ VITE_GOOGLE_CLIENT_ID=여기에_Google_Client_ID를_입력
 npm run dev
 ```
 
+개발 서버는 Google OAuth 원본과 맞추기 위해 `http://localhost:5174` 포트로 고정되어 있습니다. Google Cloud Console의 OAuth 클라이언트 `승인된 JavaScript 원본`에도 `http://localhost:5174`를 등록해야 합니다.
+
 ## 사용 가능한 스크립트
 
 | 명령어 | 설명 |
@@ -56,12 +58,13 @@ npm run dev
 
 API 요청은 `VITE_API_BASE_URL`을 기준 주소로 사용합니다. 값 끝의 `/`는 자동으로 제거됩니다.
 
-현재 인증 API는 다음 엔드포인트를 사용합니다.
+현재 프론트엔드가 사용하는 주요 API는 다음 엔드포인트입니다.
 
 | 메서드 | 경로 | 용도 |
 | --- | --- | --- |
 | `POST` | `/api/auth/google` | Google ID 토큰으로 로그인합니다. |
 | `GET` | `/api/auth/me` | 현재 로그인한 사용자 정보를 조회합니다. |
 | `POST` | `/api/auth/logout` | 현재 액세스 토큰으로 로그아웃합니다. |
+| `POST` | `/api/videos/upload` | 저장된 영상 화면에서 선택한 동영상 파일을 업로드합니다. |
 
 인증이 필요한 요청에는 액세스 토큰이 있을 때 `Authorization: Bearer <token>` 헤더가 포함됩니다.
