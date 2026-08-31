@@ -15,6 +15,9 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.LocalDateTime;
+import java.util.List;
+
 @RestController
 @RequestMapping("/api/auth")
 public class AuthController {
@@ -22,12 +25,14 @@ public class AuthController {
     private final UserRepository userRepository;
     private final GoogleTokenVerifier googleTokenVerifier;
     private final JwtTokenProvider jwtTokenProvider;
+    private final LoginHistoryRepository loginHistoryRepository;
 
     public AuthController(UserRepository userRepository, GoogleTokenVerifier googleTokenVerifier,
-                          JwtTokenProvider jwtTokenProvider) {
+                          JwtTokenProvider jwtTokenProvider, LoginHistoryRepository loginHistoryRepository) {
         this.userRepository = userRepository;
         this.googleTokenVerifier = googleTokenVerifier;
         this.jwtTokenProvider = jwtTokenProvider;
+        this.loginHistoryRepository = loginHistoryRepository;
     }
 
     /**
@@ -61,8 +66,21 @@ public class AuthController {
 
         User savedUser = userRepository.save(user);
 
+        // 로그인 이력 기록 (7월 회의: user_id + 로그인 시각)
+        loginHistoryRepository.save(new LoginHistory(savedUser));
+
         String accessToken = jwtTokenProvider.createToken(savedUser);
         return ApiResponse.ok(new LoginResponse(accessToken, UserResponse.from(savedUser)), "로그인 성공");
+    }
+
+    /** 내 로그인 이력 조회(최신순). 본인 이력만 조회 가능. */
+    @GetMapping("/login-history")
+    public ApiResponse<List<LoginHistoryResponse>> loginHistory(@AuthenticationPrincipal AuthUser authUser) {
+        List<LoginHistoryResponse> history = loginHistoryRepository.findAllByUserIdOrderByIdDesc(authUser.id())
+                .stream()
+                .map(LoginHistoryResponse::from)
+                .toList();
+        return ApiResponse.ok(history);
     }
 
     /** 현재 로그인 사용자 정보 */
@@ -85,6 +103,20 @@ public class AuthController {
     public record GoogleLoginRequest(
             @NotBlank String idToken
     ) {
+    }
+
+    public record LoginHistoryResponse(
+            Long id,
+            Long userId,
+            LocalDateTime loggedInAt
+    ) {
+        static LoginHistoryResponse from(LoginHistory history) {
+            return new LoginHistoryResponse(
+                    history.getId(),
+                    history.getUser().getId(),
+                    history.getLoggedInAt()
+            );
+        }
     }
 
     public record LoginResponse(

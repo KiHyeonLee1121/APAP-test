@@ -3,6 +3,7 @@ package com.apap.backend.analysis;
 import com.apap.backend.alert.Alert;
 import com.apap.backend.alert.AlertRepository;
 import com.apap.backend.auth.AuthUser;
+import com.apap.backend.cases.UserCaseRepository;
 import com.apap.backend.common.ApiResponse;
 import com.apap.backend.event.DetectionEvent;
 import com.apap.backend.event.DetectionEventRepository;
@@ -36,6 +37,7 @@ public class AnalysisController {
     private final VideoSourceRepository videoSourceRepository;
     private final DetectionEventRepository detectionEventRepository;
     private final AlertRepository alertRepository;
+    private final UserCaseRepository userCaseRepository;
     private final String aiServerUrl;
     private final RestClient restClient;
 
@@ -44,14 +46,26 @@ public class AnalysisController {
             VideoSourceRepository videoSourceRepository,
             DetectionEventRepository detectionEventRepository,
             AlertRepository alertRepository,
+            UserCaseRepository userCaseRepository,
             @Value("${apap.ai-server-url}") String aiServerUrl
     ) {
         this.analysisJobRepository = analysisJobRepository;
         this.videoSourceRepository = videoSourceRepository;
         this.detectionEventRepository = detectionEventRepository;
         this.alertRepository = alertRepository;
+        this.userCaseRepository = userCaseRepository;
         this.aiServerUrl = aiServerUrl;
         this.restClient = RestClient.create();
+    }
+
+    /**
+     * 알림 메시지 결정: 유저에게 활성 케이스가 있으면 해당 케이스의 out_msg를 사용하고,
+     * 없으면 기본 메시지를 유지한다. (7월 회의: 케이스 out_msg 연계, 여러 개면 가장 먼저 등록한 활성 케이스 기준)
+     */
+    private String resolveAlertMessage(Long userId, String defaultMessage) {
+        return userCaseRepository.findFirstByUserIdAndActiveIsTrueOrderByIdAsc(userId)
+                .map(userCase -> userCase.getDetectionCase().getOutMsg())
+                .orElse(defaultMessage);
     }
 
     @PostMapping("/jobs")
@@ -88,11 +102,10 @@ public class AnalysisController {
                 ));
 
                 if (eventType == DetectionEventType.ABNORMAL) {
-                    alertRepository.save(new Alert(
-                            event,
-                            videoSource.getUser(),
-                            "비정상 행동이 감지되었습니다. confidence=" + String.format("%.2f", aiResponse.confidence())
-                    ));
+                    String message = resolveAlertMessage(
+                            videoSource.getUser().getId(),
+                            "비정상 행동이 감지되었습니다. confidence=" + String.format("%.2f", aiResponse.confidence()));
+                    alertRepository.save(new Alert(event, videoSource.getUser(), message));
                 }
 
                 job.complete(AnalysisJobStatus.DONE, null);
@@ -148,11 +161,10 @@ public class AnalysisController {
                     || eventRequest.eventType() == DetectionEventType.FALL
                     || eventRequest.eventType() == DetectionEventType.INTRUSION
                     || eventRequest.eventType() == DetectionEventType.ANOMALOUS) {
-                alertRepository.save(new Alert(
-                        event,
-                        job.getVideoSource().getUser(),
-                        "비정상 행동이 감지되었습니다. severity=" + eventRequest.severity()
-                ));
+                String message = resolveAlertMessage(
+                        job.getVideoSource().getUser().getId(),
+                        "비정상 행동이 감지되었습니다. severity=" + eventRequest.severity());
+                alertRepository.save(new Alert(event, job.getVideoSource().getUser(), message));
             }
         }
 

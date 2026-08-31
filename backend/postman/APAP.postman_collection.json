@@ -131,6 +131,18 @@
           }
         },
         {
+          "name": "내 로그인 이력",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login-history",
+              "host": [ "{{baseUrl}}" ],
+              "path": [ "api", "auth", "login-history" ]
+            }
+          }
+        },
+        {
           "name": "로그아웃",
           "request": {
             "method": "POST",
@@ -139,6 +151,52 @@
               "raw": "{{baseUrl}}/api/auth/logout",
               "host": [ "{{baseUrl}}" ],
               "path": [ "api", "auth", "logout" ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Cases",
+      "item": [
+        {
+          "name": "감지 케이스 목록",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/cases",
+              "host": [ "{{baseUrl}}" ],
+              "path": [ "api", "cases" ]
+            }
+          }
+        },
+        {
+          "name": "유저 케이스 등록",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"caseId\": 1\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/user-cases",
+              "host": [ "{{baseUrl}}" ],
+              "path": [ "api", "user-cases" ]
+            }
+          },
+          "description": "응답에 케이스 outMsg가 포함됩니다. 중복 등록 시 400."
+        },
+        {
+          "name": "내 케이스 목록",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/user-cases",
+              "host": [ "{{baseUrl}}" ],
+              "path": [ "api", "user-cases" ]
             }
           }
         }

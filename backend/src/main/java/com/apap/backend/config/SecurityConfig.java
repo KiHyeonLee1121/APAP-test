@@ -52,7 +52,7 @@ public class SecurityConfig {
                         .requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**").permitAll()
                         // 쓰기 작업: MANAGER 이상
                         .requestMatchers(HttpMethod.POST, "/api/videos", "/api/videos/upload",
-                                "/api/analysis/jobs", "/api/alerts/test").hasAnyRole("ADMIN", "MANAGER")
+                                "/api/analysis/jobs", "/api/alerts/test", "/api/user-cases").hasAnyRole("ADMIN", "MANAGER")
                         .requestMatchers(HttpMethod.PUT, "/api/videos/**").hasAnyRole("ADMIN", "MANAGER")
                         .requestMatchers(HttpMethod.PATCH, "/api/videos/**", "/api/alerts/**").hasAnyRole("ADMIN", "MANAGER")
                         .requestMatchers(HttpMethod.DELETE, "/api/videos/**").hasAnyRole("ADMIN", "MANAGER")

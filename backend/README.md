@@ -58,6 +58,7 @@ CREATE DATABASE abnormal_alarm CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 > - `users`: 구글 로그인 도입으로 `password_hash` 제거, `google_sub`(NOT NULL, unique)·`picture_url` 추가
 > - 전 엔티티에 soft delete용 `deleted` 컬럼 추가(영상은 삭제 시 `deleted=true`로만 처리)
 > - `alerts.detection_event_id`가 nullable로 변경(테스트/시스템 알림 지원)
+> - (7월 회의) 신규 테이블 `login_history`(로그인 이력), `detection_cases`·`user_cases`(감지 케이스 구독) — `ddl-auto: update`로 자동 생성되며, 케이스 4종은 서버 기동 시 자동 시드됨
 
 ### 3. 구글 OAuth 클라이언트 ID 준비
 
