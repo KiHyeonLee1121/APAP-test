@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
-from ..infer import predict_video
-from ..utils import MODEL_PATH
+from ..anomaly.infer import predict_anomaly
+from ..anomaly.train import AUTOENCODER_PATH
 from .schemas import HealthResponse, InferenceResponse, VideoInferenceRequest
 
 
@@ -21,10 +21,10 @@ def health() -> HealthResponse:
 
 @app.post("/predict/video", response_model=InferenceResponse)
 def predict_video_endpoint(request: VideoInferenceRequest) -> InferenceResponse:
-    model_path = request.model_path or str(MODEL_PATH)
+    model_path = request.model_path or str(AUTOENCODER_PATH)
 
     try:
-        result = predict_video(video_path=request.video_path, model_path=model_path)
+        result = predict_anomaly(video_path=request.video_path, model_path=model_path)
     except FileNotFoundError as exc:
         return InferenceResponse(
             prediction=None,
@@ -33,7 +33,7 @@ def predict_video_endpoint(request: VideoInferenceRequest) -> InferenceResponse:
             status="error",
             message=(
                 f"{exc} If the model file is missing, run "
-                "`python -m src.train` first."
+                "`python -m src.anomaly.train` first."
             ),
         )
     except Exception as exc:
@@ -45,9 +45,13 @@ def predict_video_endpoint(request: VideoInferenceRequest) -> InferenceResponse:
             message=str(exc),
         )
 
+    # reconstruction_error / threshold as a 0~1-ish confidence signal for the backend's
+    # severity bucketing (>=0.9 CRITICAL, >=0.75 HIGH, >=0.5 MEDIUM, else LOW).
+    confidence = min(result.reconstruction_error / result.threshold, 1.0) if result.threshold else 0.0
+
     return InferenceResponse(
         prediction=result.label,
-        confidence=result.confidence,
+        confidence=confidence,
         source=request.video_path,
         status="success",
     )
