@@ -39,8 +39,8 @@
 
 | 작업 | 필요 권한 |
 |---|---|
-| 조회(GET): 영상/이벤트/분석작업/알림/대시보드/내 정보 | 인증된 모든 역할(VIEWER 이상) |
-| 쓰기: 영상 등록·업로드·수정·삭제, 분석 요청, 알림 읽음·테스트 | MANAGER 이상 |
+| 조회(GET): 영상/이벤트/분석작업/알림/대시보드/내 정보/케이스/로그인 이력 | 인증된 모든 역할(VIEWER 이상) |
+| 쓰기: 영상 등록·업로드·수정·삭제, 분석 요청, 알림 읽음·테스트, 케이스 등록 | MANAGER 이상 |
 | `POST /api/analysis/callback` | 공개(엣지/AI용, 추후 API Key 보호 권장) |
 
 > 목록/요약/알림 등은 **쿼리 파라미터 userId를 받지 않으며**, JWT 토큰의 사용자 기준으로 동작한다.
@@ -62,13 +62,41 @@
   "user": { "id": 1, "email": "user@example.com", "name": "홍길동", "pictureUrl": "https://...", "role": "MANAGER" }
 }
 ```
-동작: ID 토큰 검증(서명·만료·issuer·audience=`GOOGLE_CLIENT_ID`·`email_verified`) → `google_sub`/`email`로 find-or-create → JWT 발급.
+동작: ID 토큰 검증(서명·만료·issuer·audience=`GOOGLE_CLIENT_ID`·`email_verified`) → `google_sub`/`email`로 find-or-create → JWT 발급. **성공 시 로그인 이력 1건 자동 기록**(7월 회의).
 
 ### GET /api/auth/me — 현재 사용자 (인증)
 응답 `data`: 위 `user`와 동일 구조.
 
+### GET /api/auth/login-history — 내 로그인 이력 (인증)
+본인 이력만 최신순 조회. 응답 `data`:
+```json
+[ { "id": 3, "userId": 1, "loggedInAt": "2026-07-30T10:12:00" } ]
+```
+
 ### POST /api/auth/logout — 로그아웃 (인증)
 무상태. `data: null`, 클라이언트가 토큰 폐기.
+
+---
+
+## Case (감지 케이스, 7월 회의 신규)
+
+서비스 시나리오(한강 교각 위험 행동 / 식당 식권 미제출 / 영화관 무단입장 / 마트 주머니 은닉)를 케이스로 관리한다. 초기 4종은 서버 기동 시 자동 시드된다.
+
+### GET /api/cases — 케이스 목록 (인증)
+```json
+[ { "id": 1, "name": "한강 교각 위험 행동", "description": "...", "outMsg": "한강 교각 주변에서 위험 행동이 감지되었습니다..." } ]
+```
+
+### POST /api/user-cases — 유저 케이스 등록 (MANAGER+)
+요청 `{ "caseId": 1 }` → 응답 `data`에 케이스 `outMsg` 포함(회의: in user_id, case_id → out msg). 중복 등록 시 400.
+```json
+{ "id": 1, "userId": 1, "caseId": 1, "caseName": "한강 교각 위험 행동", "outMsg": "...", "active": true }
+```
+
+### GET /api/user-cases — 내 케이스 목록 (인증)
+위 UserCaseResponse 배열.
+
+> **알림 연계**: 비정상 이벤트로 Alert가 생성될 때 유저에게 활성 케이스가 있으면 알림 메시지로 해당 케이스의 `outMsg`를 사용한다(여러 개면 가장 먼저 등록한 활성 케이스 기준, 없으면 기본 메시지).
 
 ---
 
@@ -89,6 +117,11 @@ VideoResponse:
 | GET | `/api/videos/{videoId}` | 인증(소유자) | 상세 |
 | PATCH | `/api/videos/{videoId}` | MANAGER+(소유자) | 수정. body `{type, name, sourceUrl, status}` |
 | DELETE | `/api/videos/{videoId}` | MANAGER+(소유자) | soft delete |
+
+`sourceUrl` 의미 (저장 모드에 따라 다름):
+- **local 모드(기본)**: 업로드 디렉터리 기준 파일 경로 (예: `uploads/videos/{uuid}-{filename}`)
+- **s3 모드(운영)**: S3 객체 키 `videos/{uuid}-{filename}` — 풀 URL이 아닌 **키만** 저장. AI 서버는 이 키로 S3에서 직접 읽는다
+- 라벨/케이스 등 분류 정보는 키/경로에 넣지 않고 **DB 컬럼으로만** 관리한다 (AI 학습 시 S3 목록 순회와 무관하게 유지)
 
 > 타인 소유 리소스 접근 시 정보 노출 방지를 위해 `404 NOT_FOUND` 반환.
 
@@ -195,6 +228,8 @@ AlertResponse:
 
 ## AI 서버 연동 계약
 
+> **2026-07 확인**: AI팀의 Anomaly Detection(정상만 학습→이상치 탐지) 반영 후에도 `/predict/video` 응답 스키마는 `{prediction, confidence, source, status(success/error), message}`로 **변경 없음**을 ai-server 코드로 확인함. 백엔드 매핑 그대로 유효.
+
 백엔드는 AI 모델을 직접 실행하지 않고 HTTP로 연동한다.
 
 - **백엔드 → AI**: `POST {AI_SERVER_URL}/predict/video`
@@ -206,7 +241,9 @@ AlertResponse:
   { "prediction": "normal|abnormal", "confidence": 0.87, "source": "...", "status": "success", "message": null }
   ```
 - 변환: `abnormal → ABNORMAL`(그 외 `NORMAL`), confidence → severity(`>=0.9` CRITICAL / `>=0.75` HIGH / `>=0.5` MEDIUM / else LOW), `status!=success`면 job `FAILED`.
-- ⚠️ `video_path`는 현재 백엔드 파일시스템 경로다. **AI 서버가 동일 경로(공유 볼륨 등)로 접근 가능해야 한다** — 배포 시 공유 스토리지/URL 방식 합의 필요.
+- `video_path`에는 `VideoSource.sourceUrl` 값이 그대로 전달된다:
+  - local 모드: 백엔드 파일시스템 경로 → AI 서버가 동일 경로(같은 머신/공유 볼륨)로 접근
+  - s3 모드: **S3 객체 키** (`videos/{uuid}-{filename}`) → AI 서버가 버킷(`project10-86-virg-apap-media`, us-east-1)에서 직접 다운로드. AI 측도 EC2 Role 등 S3 읽기 권한 필요
 
 ## 환경변수
 
@@ -218,5 +255,10 @@ AlertResponse:
 | `GOOGLE_CLIENT_ID` | 구글 OAuth 클라이언트 ID | — |
 | `JWT_SECRET` | JWT 서명 키(32바이트+) | (미설정 시 임시키) |
 | `JWT_EXPIRATION_MS` | 토큰 만료(ms) | `86400000` |
+| `APP_STORAGE_MODE` | 영상 저장 모드 `local`/`s3` | `local` |
+| `S3_BUCKET` | S3 버킷 이름 (s3 모드) | `project10-86-virg-apap-media` |
+| `AWS_REGION` | S3 리전 (s3 모드, 계정 정책상 고정) | `us-east-1` |
 
-> 변경 이력: 이메일/비밀번호 인증 제거 → 구글 OIDC + JWT 도입, 시나리오 도메인 제거, soft delete 도입.
+> S3 자격증명 환경변수는 **없다**. 이 AWS 계정은 액세스 키 발급이 불가하며, EC2 인스턴스 프로파일 Role(`SafeInstanceProfile-project10-86-virg`)로 자동 인증한다.
+
+> 변경 이력: 이메일/비밀번호 인증 제거 → 구글 OIDC + JWT 도입, 시나리오 도메인 제거, soft delete 도입, 영상 저장 S3 전환(local/s3 모드 분기).
