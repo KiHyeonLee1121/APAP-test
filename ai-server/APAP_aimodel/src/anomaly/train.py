@@ -22,16 +22,13 @@ except ImportError as exc:
 else:
     _SKLEARN_IMPORT_ERROR = None
 
-from ..dataset import find_labeled_videos
-from ..extract_pose import extract_pose_landmarks
-from ..features import make_feature_vector
+from ..dataset import build_dataset
 from ..utils import (
     CHECKPOINTS_DIR,
     ensure_project_dirs,
     format_path,
     log_error,
     log_info,
-    log_warning,
 )
 from .model import create_autoencoder, save_autoencoder
 
@@ -69,27 +66,20 @@ def _build_normal_features(
         kwargs["synthetic_video_dir"] = synthetic_video_dir
     kwargs["include_synthetic"] = include_synthetic
 
-    labeled_videos = find_labeled_videos(**kwargs)
-    normal_videos = [(path, label) for path, label in labeled_videos if label == 0]
+    # Reuse build_dataset so landmark caching (FeatureCache) applies to training.
+    bundle = build_dataset(**kwargs)
 
-    if not normal_videos:
+    # Autoencoder trains on normal data only (label == 0).
+    normal_features = bundle.features[bundle.labels == 0]
+    if normal_features.shape[0] == 0:
         raise ValueError(
             "No normal videos found. Autoencoder trains on normal data only."
         )
 
-    features: list[np.ndarray] = []
-    for video_path, _ in normal_videos:
-        try:
-            landmarks = extract_pose_landmarks(str(video_path))
-            features.append(make_feature_vector(landmarks))
-        except Exception as exc:
-            log_warning(f"Skipping {format_path(video_path)}: {exc}")
-
-    if not features:
-        raise RuntimeError("No valid normal samples could be extracted.")
-
-    log_info(f"Normal training samples: {len(features)}")
-    return np.vstack(features).astype(np.float32)
+    if bundle.skipped:
+        log_info(f"Skipped videos: {len(bundle.skipped)}")
+    log_info(f"Normal training samples: {normal_features.shape[0]}")
+    return normal_features.astype(np.float32)
 
 
 def train_autoencoder(
