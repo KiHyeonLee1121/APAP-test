@@ -42,6 +42,7 @@ cp .env.example .env
 | `APP_STORAGE_MODE` | 영상 저장 모드. `local`(uploads/ 디렉터리) 또는 `s3`(AWS S3) | `local` |
 | `S3_BUCKET` | S3 버킷 이름 (s3 모드에서만 사용) | `project10-86-virg-apap-media` |
 | `AWS_REGION` | S3 리전 (s3 모드, 계정 정책상 us-east-1 고정) | `us-east-1` |
+| `ANALYSIS_AUTO_ON_UPLOAD` | 영상 업로드 시 자동 분석 여부 | `true` |
 
 > **S3 자격증명 관련**: 액세스 키/시크릿 환경변수는 사용하지 않습니다. 팀 AWS 계정은 액세스 키 발급이 불가능하며, EC2에 부착된 인스턴스 프로파일 Role로 자동 인증됩니다. 따라서 **로컬에서는 s3 모드가 동작하지 않고**, 기본값인 local 모드로 개발합니다.
 
@@ -170,6 +171,17 @@ http://localhost:8080/swagger-ui/index.html
 3. 백엔드가 `prediction`을 DetectionEventType(NORMAL/ABNORMAL)으로, `confidence`를 Severity로 변환해 DetectionEvent 저장. ABNORMAL이면 Alert 생성
 
 보조 흐름(콜백): 엣지 디바이스(CCTV/카메라)가 직접 분석 결과를 보내는 경우 `POST /api/analysis/callback`으로 DetectionEvent 목록을 전송합니다. AI 모델 고도화 시 FALL/INTRUSION/ANOMALOUS 같은 이벤트 타입도 이 경로로 수용합니다.
+
+### 업로드 시 자동 분석
+
+**분석 버튼을 누르지 않아도, 영상을 업로드하면 분석이 자동으로 시작됩니다.**
+
+- `POST /api/videos/upload` 요청 하나로 저장 → 분석 작업 생성 → 백그라운드 분석까지 이어집니다.
+- AI 호출은 영상 길이만큼 시간이 걸리므로 **업로드 응답은 기다리지 않고 즉시 반환**됩니다. 응답에 담긴 `analysisJobId`로 `GET /api/analysis/jobs/{jobId}`를 조회하면 진행 상황(`PENDING` → `DONE`/`FAILED`)을 확인할 수 있습니다.
+- 영상 상태는 분석 중 `ANALYZING`, 완료 시 `READY`, 실패 시 `ERROR`로 바뀝니다.
+- 자동 분석은 **업로드(UPLOAD 타입)에만** 적용됩니다. `POST /api/videos`로 CCTV 주소만 등록하는 경우는 기존처럼 수동 요청이 필요합니다.
+- 끄려면 `ANALYSIS_AUTO_ON_UPLOAD=false`로 실행하세요. 이 경우 기존처럼 `POST /api/analysis/jobs`로 직접 요청해야 합니다.
+- `POST /api/analysis/jobs`는 **재분석** 용도로 계속 사용할 수 있습니다(동기 실행).
 
 > `video_path`에는 `VideoSource.sourceUrl`이 그대로 전달됩니다. local 모드에선 파일 경로, s3 모드에선 S3 객체 키(`videos/{uuid}-{filename}`)이며, s3 모드에서는 AI 서버가 이 키로 버킷에서 영상을 직접 읽습니다.
 

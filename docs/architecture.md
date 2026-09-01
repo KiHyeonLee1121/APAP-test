@@ -68,16 +68,31 @@ sequenceDiagram
 
 ```mermaid
 flowchart LR
-    A["영상 등록/업로드"] --> B["POST /api/analysis/jobs"]
-    B --> C["AI 서버 POST /predict/video (동기)"]
+    U["POST /api/videos/upload"] --> J["AnalysisJob 생성 + 영상 ANALYZING"]
+    J --> R["업로드 즉시 응답 (analysisJobId 포함)"]
+    J -.백그라운드.-> C["AI 서버 POST /predict/video"]
+    B["POST /api/analysis/jobs (재분석, 동기)"] --> C
     C --> D["normal/abnormal + confidence 수신"]
     D --> E["DetectionEvent 저장"]
-    E -->|ABNORMAL| F["Alert 생성"]
+    E -->|ABNORMAL| F["Alert 생성 (활성 케이스 out_msg)"]
+    E --> S["영상 상태 READY / 실패 시 ERROR"]
     E --> G["대시보드/이벤트 조회"]
     H["엣지/배치 결과"] -->|POST /api/analysis/callback| E
 ```
 
-- 기본 흐름은 **동기 호출**(요청 시 AI를 바로 부르고 결과 저장). 실패 시 AnalysisJob `FAILED`.
+### 업로드 시 자동 분석
+
+7월 회의 이후 요구사항: **분석 버튼을 누르지 않고 영상만 올려도 분석이 시작된다.**
+
+- `POST /api/videos/upload` → VideoSource 저장 → AnalysisJob 생성(영상 상태 `ANALYZING`) → **응답 즉시 반환**
+- AI 호출은 영상 길이만큼 걸리므로 전용 스레드풀(`analysisExecutor`)에서 백그라운드 실행한다. 업로드 응답을 막지 않는다.
+- 클라이언트는 응답의 `analysisJobId`로 `GET /api/analysis/jobs/{jobId}`를 폴링해 진행 상황을 본다.
+- 완료 시 영상 상태를 `READY`(실패 `ERROR`)로 정리한다.
+- 백그라운드 스레드는 요청 세션 밖이라 `AnalysisJob`을 조회할 때 `videoSource`/`user`를 **join fetch로 함께 로딩**한다(LAZY 접근 실패 방지).
+- 수동/자동 경로가 `AnalysisService` 하나를 공유하므로 AI 호출·이벤트 저장·알림 생성 로직이 중복되지 않는다.
+- `apap.analysis.auto-on-upload=false`로 끌 수 있고, 자동 분석은 `UPLOAD` 타입에만 적용된다(URL로 등록한 CCTV 등은 제외).
+
+- 재분석은 **동기 호출**(`POST /api/analysis/jobs`). 실패 시 AnalysisJob `FAILED`.
 - 보조 흐름은 **콜백**(엣지/AI가 결과 배열을 직접 전송). FALL/INTRUSION 등 확장 타입 수용.
 - AI에 전달하는 `video_path`는 `VideoSource.sourceUrl` 값 그대로다. local 모드에선 파일 경로(동일 머신/공유 볼륨 필요), s3 모드에선 S3 객체 키(AI 서버가 버킷에서 직접 다운로드, AI 측도 S3 읽기 권한 필요).
 
@@ -89,11 +104,11 @@ com.apap.backend
   user/        # User(google_sub, role), UserRepository
   video/       # VideoSource(soft delete), VideoController
   storage/     # StorageService(local/s3 분기), LocalStorageService, S3StorageService, S3StorageConfig
-  analysis/    # AnalysisJob, AnalysisController(AI 호출/콜백)
+  analysis/    # AnalysisJob, AnalysisService(AI 호출·자동 분석), AnalysisController(요청/콜백)
   event/       # DetectionEvent, EventController
   alert/       # Alert, AlertController
   dashboard/   # 요약/타임라인/심각도 통계
-  config/      # SecurityConfig(필터체인/CORS), OpenApiConfig(Swagger Bearer)
+  config/      # SecurityConfig(필터체인/CORS), OpenApiConfig(Swagger Bearer), AsyncConfig(자동 분석 스레드풀)
   common/      # ApiResponse, ApiError, BaseEntity(created/updated/deleted), GlobalExceptionHandler
   health/      # 헬스체크
 ```
