@@ -23,6 +23,9 @@ apap:
   base-url: ${BASE_URL:http://localhost:8080}
   # local 모드에서 업로드 파일이 저장되는 루트 디렉터리
   upload-dir: uploads
+  analysis:
+    # true면 영상 업로드만 해도 분석이 자동 시작된다(백그라운드 실행). false면 POST /api/analysis/jobs로 수동 요청.
+    auto-on-upload: ${ANALYSIS_AUTO_ON_UPLOAD:true}
   storage:
     # local(기본): uploads/ 디렉터리 저장 — 로컬 개발용 (이 계정은 액세스 키 발급 불가라 로컬 S3 접근 불가)
     # s3: AWS S3 저장 — EC2 인스턴스 프로파일 Role 필요, sourceUrl에 S3 키(videos/{uuid}-{filename}) 저장
