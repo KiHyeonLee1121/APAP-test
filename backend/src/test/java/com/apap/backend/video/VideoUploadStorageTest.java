@@ -97,6 +97,27 @@ class VideoUploadStorageTest {
     }
 
     @Test
+    void 용량제한이_해제되어_기본상한보다_큰_영상도_업로드된다() throws Exception {
+        User manager = saveManager();
+        // Spring 기본 상한은 파일 1MB / 요청 10MB. 그보다 큰 파일이 통과해야 한다.
+        byte[] big = new byte[12 * 1024 * 1024];
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "big-video.mp4", "video/mp4", big);
+
+        MvcResult result = mockMvc.perform(multipart("/api/videos/upload")
+                        .file(file)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(manager)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.name").value("big-video.mp4"))
+                .andReturn();
+
+        JsonNode data = objectMapper.readTree(result.getResponse().getContentAsString()).get("data");
+        Path savedPath = Path.of(data.get("sourceUrl").asText());
+        assertThat(Files.exists(savedPath)).isTrue();
+        assertThat(Files.size(savedPath)).isEqualTo(big.length);
+    }
+
+    @Test
     void 업로드시_sourceUrl은_videos_uuid_filename_키를_포함한다() throws Exception {
         User manager = saveManager();
         MockMultipartFile file = new MockMultipartFile(

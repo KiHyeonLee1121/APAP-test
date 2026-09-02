@@ -127,6 +127,8 @@ VideoResponse:
 | PATCH | `/api/videos/{videoId}` | MANAGER+(소유자) | 수정. body `{type, name, sourceUrl, status}` |
 | DELETE | `/api/videos/{videoId}` | MANAGER+(소유자) | soft delete |
 
+**업로드 용량 제한 없음**: 영상 파일 크기 제한을 해제했다(Spring 기본값 파일 1MB/요청 10MB → 무제한). 필요 시 `MAX_UPLOAD_SIZE`로 상한을 걸 수 있다.
+
 **업로드 시 자동 분석**: `/api/videos/upload`로 파일을 올리면 별도 요청 없이 분석이 시작된다.
 - 업로드 API는 즉시 응답하고(AI 호출은 백그라운드 실행), 응답의 `analysisJobId`로 `GET /api/analysis/jobs/{jobId}`를 조회해 진행 상황을 확인한다.
 - 영상 상태는 `ANALYZING` → 성공 `READY` / 실패 `ERROR`로 바뀐다.
@@ -273,6 +275,7 @@ AlertResponse:
 | `S3_BUCKET` | S3 버킷 이름 (s3 모드) | `project10-86-virg-apap-media` |
 | `AWS_REGION` | S3 리전 (s3 모드, 계정 정책상 고정) | `us-east-1` |
 | `ANALYSIS_AUTO_ON_UPLOAD` | 업로드 시 자동 분석 여부 | `true` |
+| `MAX_UPLOAD_SIZE` / `MAX_UPLOAD_REQUEST_SIZE` | 업로드 용량 상한 (`-1` 무제한) | `-1` |
 
 > S3 자격증명 환경변수는 **없다**. 이 AWS 계정은 액세스 키 발급이 불가하며, EC2 인스턴스 프로파일 Role(`SafeInstanceProfile-project10-86-virg`)로 자동 인증한다.
 

@@ -4,6 +4,14 @@ server:
 spring:
   application:
     name: apap-backend
+  servlet:
+    multipart:
+      # 영상 업로드 용량 제한 해제. Spring 기본값(파일 1MB, 요청 10MB)으로는 영상을 올릴 수 없다.
+      # -1은 무제한. 필요하면 환경변수로 상한을 걸 수 있다(예: MAX_UPLOAD_SIZE=2GB).
+      max-file-size: ${MAX_UPLOAD_SIZE:-1}
+      max-request-size: ${MAX_UPLOAD_REQUEST_SIZE:-1}
+      # 메모리에 담지 않고 바로 임시 파일로 흘려보내 큰 영상에서도 메모리를 적게 쓴다.
+      file-size-threshold: 0
   datasource:
     url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:abnormal_alarm}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul
     driver-class-name: com.mysql.cj.jdbc.Driver
