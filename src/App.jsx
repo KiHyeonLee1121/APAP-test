@@ -5,6 +5,7 @@ import MainPage from './pages/MainPage';
 import CCTVPage from './pages/CCTVPage';
 import SavedVideoPage from './pages/SavedVideoPage';
 import AlertPage from './pages/AlertPage';
+import TermsPage from './pages/TermsPage';
 import ProtectedRoute from './components/ProtectedRoute';
 import { AuthProvider } from './context/AuthContext';
 
@@ -25,6 +26,8 @@ function App() {
             <Route path="/saved-video" element={<SavedVideoPage />} />
 
             <Route path="/alert" element={<AlertPage />} />
+
+            <Route path="/terms" element={<TermsPage />} />
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />

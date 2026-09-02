@@ -1,13 +1,9 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-} from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { AuthContext } from './authContextValue';
 import {
   clearDefaultAuthorizationHeader,
+  deleteCurrentUser,
   fetchCurrentUser,
   loginWithGoogleToken,
   logoutWithAccessToken,
@@ -56,6 +52,21 @@ export function AuthProvider({ children }) {
     } finally {
       resetAuth();
     }
+  }, [resetAuth]);
+
+  const withdrawAccount = useCallback(async () => {
+    const withdrawToken = getStoredAccessToken();
+
+    if (!withdrawToken) {
+      resetAuth();
+      throw new Error('로그인 정보가 없습니다. 다시 로그인해주세요.');
+    }
+
+    const payload = await deleteCurrentUser(withdrawToken);
+
+    resetAuth();
+
+    return payload?.message || '회원 탈퇴가 완료되었습니다.';
   }, [resetAuth]);
 
   const loginWithGoogle = useCallback(
@@ -128,6 +139,7 @@ export function AuthProvider({ children }) {
       authError,
       loginWithGoogle,
       logout,
+      withdrawAccount,
     }),
     [
       accessToken,
@@ -136,6 +148,7 @@ export function AuthProvider({ children }) {
       authError,
       loginWithGoogle,
       logout,
+      withdrawAccount,
     ],
   );
 
