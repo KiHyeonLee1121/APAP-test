@@ -9,7 +9,13 @@ import com.apap.backend.user.UserRepository;
 import jakarta.persistence.EntityNotFoundException;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import org.springframework.core.io.Resource;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.MediaTypeFactory;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -23,6 +29,8 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
 import java.util.List;
 
 @RestController
@@ -65,18 +73,20 @@ public class VideoController {
 
     @PostMapping("/upload")
     public ApiResponse<VideoResponse> upload(@RequestParam MultipartFile file,
+                                             @RequestParam(required = false) String name,
                                              @AuthenticationPrincipal AuthUser authUser) throws IOException {
         User user = userRepository.findById(authUser.id())
                 .orElseThrow(() -> new EntityNotFoundException("사용자를 찾을 수 없습니다."));
 
         String originalName = file.getOriginalFilename() == null ? "video" : file.getOriginalFilename();
+        String videoName = hasText(name) ? name.trim() : originalName;
         // 저장 모드(local/s3)에 따라 sourceUrl에 로컬 경로 또는 S3 키가 저장된다.
         String storedLocation = storageService.store(file);
 
         VideoSource videoSource = videoSourceRepository.save(new VideoSource(
                 user,
                 VideoSourceType.UPLOAD,
-                originalName,
+                videoName,
                 storedLocation
         ));
 
@@ -107,6 +117,27 @@ public class VideoController {
         return ApiResponse.ok(VideoResponse.from(findOwnedVideo(videoId, authUser)));
     }
 
+    @GetMapping("/{videoId}/content")
+    public ResponseEntity<Resource> content(@PathVariable Long videoId,
+                                            @AuthenticationPrincipal AuthUser authUser) throws IOException {
+        VideoSource videoSource = findOwnedVideo(videoId, authUser);
+        StorageService.StoredObject storedObject = storageService.load(videoSource.getSourceUrl());
+        String fileName = resolvePlaybackFileName(videoSource);
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.set(HttpHeaders.CONTENT_TYPE, resolveContentType(storedObject, fileName));
+        headers.setContentDisposition(ContentDisposition.inline()
+                .filename(fileName, StandardCharsets.UTF_8)
+                .build());
+        if (storedObject.contentLength() != null) {
+            headers.setContentLength(storedObject.contentLength());
+        }
+
+        return ResponseEntity.ok()
+                .headers(headers)
+                .body(storedObject.resource());
+    }
+
     @PatchMapping("/{videoId}")
     public ApiResponse<VideoResponse> update(@PathVariable Long videoId,
                                              @Valid @RequestBody VideoUpdateRequest request,
@@ -135,6 +166,28 @@ public class VideoController {
         return videoSource;
     }
 
+    private boolean hasText(String value) {
+        return value != null && !value.trim().isEmpty();
+    }
+
+    private String resolveContentType(StorageService.StoredObject storedObject, String fileName) {
+        if (hasText(storedObject.contentType())) {
+            return storedObject.contentType();
+        }
+
+        return MediaTypeFactory.getMediaType(fileName)
+                .orElse(MediaType.APPLICATION_OCTET_STREAM)
+                .toString();
+    }
+
+    private String resolvePlaybackFileName(VideoSource videoSource) {
+        String sourceUrl = videoSource.getSourceUrl();
+        int lastSeparator = Math.max(sourceUrl.lastIndexOf('/'), sourceUrl.lastIndexOf('\\'));
+        String fileName = sourceUrl.substring(lastSeparator + 1);
+
+        return hasText(fileName) ? fileName : videoSource.getName();
+    }
+
     public record VideoRequest(
             VideoSourceType type,
             @NotBlank String name,
@@ -155,8 +208,10 @@ public class VideoController {
             Long userId,
             VideoSourceType type,
             String name,
+            String author,
             String sourceUrl,
             VideoSourceStatus status,
+            LocalDateTime createdAt,
             // 업로드 시 자동 생성된 분석 작업 id. 자동 분석이 꺼져 있거나 업로드 외 응답에서는 null
             Long analysisJobId
     ) {
@@ -170,8 +225,10 @@ public class VideoController {
                     videoSource.getUser().getId(),
                     videoSource.getType(),
                     videoSource.getName(),
+                    videoSource.getUser().getName(),
                     videoSource.getSourceUrl(),
                     videoSource.getStatus(),
+                    videoSource.getCreatedAt(),
                     analysisJobId
             );
         }

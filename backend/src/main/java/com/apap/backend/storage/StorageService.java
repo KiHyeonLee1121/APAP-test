@@ -1,6 +1,7 @@
 package com.apap.backend.storage;
 
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.core.io.Resource;
 
 import java.io.IOException;
 
@@ -16,4 +17,16 @@ public interface StorageService {
      * - s3 모드: S3 객체 키 (videos/{uuid}-{filename})
      */
     String store(MultipartFile file) throws IOException;
+
+    /**
+     * VideoSource.sourceUrl에 저장된 위치의 파일을 읽어 브라우저 재생용으로 반환한다.
+     */
+    StoredObject load(String sourceUrl) throws IOException;
+
+    record StoredObject(
+            Resource resource,
+            String contentType,
+            Long contentLength
+    ) {
+    }
 }

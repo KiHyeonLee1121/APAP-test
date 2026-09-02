@@ -2,9 +2,12 @@ package com.apap.backend.storage;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.UrlResource;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -20,9 +23,11 @@ import java.nio.file.Path;
 public class LocalStorageService implements StorageService {
 
     private final Path uploadDir;
+    private final Path uploadRoot;
 
     public LocalStorageService(@Value("${apap.upload-dir}") String uploadDir) {
         this.uploadDir = Path.of(uploadDir);
+        this.uploadRoot = this.uploadDir.toAbsolutePath().normalize();
     }
 
     @Override
@@ -32,5 +37,32 @@ public class LocalStorageService implements StorageService {
         Files.createDirectories(savedPath.getParent());
         file.transferTo(savedPath.toAbsolutePath());
         return savedPath.toString();
+    }
+
+    @Override
+    public StoredObject load(String sourceUrl) throws IOException {
+        Path savedPath = resolveSavedPath(sourceUrl);
+
+        if (!Files.isRegularFile(savedPath)) {
+            throw new FileNotFoundException("영상 파일을 찾을 수 없습니다.");
+        }
+
+        Resource resource = new UrlResource(savedPath.toUri());
+        String contentType = Files.probeContentType(savedPath);
+
+        return new StoredObject(resource, contentType, Files.size(savedPath));
+    }
+
+    private Path resolveSavedPath(String sourceUrl) throws IOException {
+        Path sourcePath = Path.of(sourceUrl);
+        Path savedPath = sourcePath.isAbsolute()
+                ? sourcePath.normalize()
+                : Path.of("").toAbsolutePath().resolve(sourcePath).normalize();
+
+        if (!savedPath.startsWith(uploadRoot)) {
+            throw new IOException("허용되지 않은 영상 경로입니다.");
+        }
+
+        return savedPath;
     }
 }

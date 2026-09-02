@@ -2,10 +2,14 @@ package com.apap.backend.storage;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.core.io.InputStreamResource;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import software.amazon.awssdk.core.sync.RequestBody;
+import software.amazon.awssdk.core.ResponseInputStream;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
 import java.io.IOException;
@@ -39,5 +43,21 @@ public class S3StorageService implements StorageService {
                 .build();
         s3Client.putObject(request, RequestBody.fromInputStream(file.getInputStream(), file.getSize()));
         return key;
+    }
+
+    @Override
+    public StoredObject load(String sourceUrl) {
+        GetObjectRequest request = GetObjectRequest.builder()
+                .bucket(bucket)
+                .key(sourceUrl)
+                .build();
+        ResponseInputStream<GetObjectResponse> objectStream = s3Client.getObject(request);
+        GetObjectResponse response = objectStream.response();
+
+        return new StoredObject(
+                new InputStreamResource(objectStream),
+                response.contentType(),
+                response.contentLength()
+        );
     }
 }

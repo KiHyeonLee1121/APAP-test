@@ -112,18 +112,32 @@
 
 VideoResponse:
 ```json
-{ "id": 1, "userId": 1, "type": "UPLOAD", "name": "샘플", "sourceUrl": "uploads/x.mp4", "status": "READY", "analysisJobId": 7 }
+{
+  "id": 1,
+  "userId": 1,
+  "type": "UPLOAD",
+  "name": "출입구 CCTV",
+  "author": "홍길동",
+  "sourceUrl": "uploads/x.mp4",
+  "status": "READY",
+  "createdAt": "2026-09-03T10:12:00",
+  "analysisJobId": 7
+}
 ```
 - `type`: `UPLOAD` | `CCTV` | `EDGE_GATEWAY`
 - `status`: `READY` | `ANALYZING` | `ERROR` | `DISABLED`
+- `name`: 영상 제목. 업로드 시 별도 제목을 보내지 않으면 원본 파일명을 사용
+- `author`: 영상 소유자인 로그인 사용자 이름
+- `createdAt`: 영상 저장 시각
 - `analysisJobId`: **업로드 시 자동 생성된 분석 작업 id**. 업로드 외 응답이나 자동 분석이 꺼진 경우 `null`
 
 | Method | Path | 권한 | 설명 |
 |---|---|---|---|
 | POST | `/api/videos` | MANAGER+ | 영상 소스 등록. body `{type, name, sourceUrl}` (자동 분석 대상 아님) |
-| POST | `/api/videos/upload` | MANAGER+ | 파일 업로드(multipart `file`) → 저장 후 VideoSource 생성 + **분석 자동 시작** |
+| POST | `/api/videos/upload` | MANAGER+ | 파일 업로드(multipart `file`, 선택 `name`) → 저장 후 VideoSource 생성 + **분석 자동 시작** |
 | GET | `/api/videos` | 인증 | 내 영상 목록 |
 | GET | `/api/videos/{videoId}` | 인증(소유자) | 상세 |
+| GET | `/api/videos/{videoId}/content` | 인증(소유자) | 저장된 영상 파일 재생용 스트림 |
 | PATCH | `/api/videos/{videoId}` | MANAGER+(소유자) | 수정. body `{type, name, sourceUrl, status}` |
 | DELETE | `/api/videos/{videoId}` | MANAGER+(소유자) | soft delete |
 
