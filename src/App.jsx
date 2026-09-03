@@ -17,6 +17,7 @@ function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<LoginPage />} />
+          <Route path="/terms" element={<TermsPage />} />
 
           <Route element={<ProtectedRoute />}>
             <Route path="/main" element={<MainPage />} />
@@ -26,8 +27,6 @@ function App() {
             <Route path="/saved-video" element={<SavedVideoPage />} />
 
             <Route path="/alert" element={<AlertPage />} />
-
-            <Route path="/terms" element={<TermsPage />} />
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />
