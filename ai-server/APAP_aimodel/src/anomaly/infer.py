@@ -18,6 +18,7 @@ else:
 from ..extract_pose import extract_pose_landmarks, read_video_fps
 from ..features import make_feature_vector
 from ..utils import log_error
+from ..video_storage import resolve_video_path
 from ..windowing import split_into_windows, window_time_bounds
 from .model import load_autoencoder
 from .train import AUTOENCODER_PATH
@@ -68,8 +69,11 @@ def predict_anomaly(
 
     model, scaler, threshold = load_autoencoder(model_path)
 
-    landmarks = extract_pose_landmarks(str(video_path))
-    fps = read_video_fps(str(video_path))
+    # video_path may be a local path or (in s3 storage mode) an S3 object key —
+    # resolve_video_path gives extract_pose_landmarks a real local file either way.
+    with resolve_video_path(str(video_path)) as local_path:
+        landmarks = extract_pose_landmarks(str(local_path))
+        fps = read_video_fps(str(local_path))
     errors = compute_window_errors(landmarks, fps, model, scaler)
 
     # A clip is anomalous if ANY window exceeds the threshold, so the clip-level
