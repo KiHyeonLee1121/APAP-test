@@ -1,5 +1,9 @@
 opencv-python
-mediapipe==0.10.21
+# mediapipe==0.10.21 has no Linux wheel (only macOS) — pin per-platform so
+# local macOS dev keeps the version already verified there, while Linux
+# (Docker/EC2) uses the latest 0.10.x actually published for linux+cp311.
+mediapipe==0.10.21; sys_platform == "darwin"
+mediapipe==0.10.18; sys_platform == "linux"
 numpy
 pandas
 scikit-learn
