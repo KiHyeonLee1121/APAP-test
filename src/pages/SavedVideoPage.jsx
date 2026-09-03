@@ -7,6 +7,7 @@ import { useAuth } from '../hooks/useAuth';
 import {
   fetchVideoContent,
   fetchVideos,
+  resetVideos,
   uploadVideoFile,
 } from '../services/videoApi';
 
@@ -62,6 +63,7 @@ function SavedVideoPage() {
   const [isUploading, setIsUploading] = useState(false);
   const [isLoadingVideos, setIsLoadingVideos] = useState(true);
   const [isLoadingPlayback, setIsLoadingPlayback] = useState(false);
+  const [isResettingVideos, setIsResettingVideos] = useState(false);
   const [isSavedVideoPlaying, setIsSavedVideoPlaying] = useState(false);
   const [selectedVideoId, setSelectedVideoId] = useState(null);
   const [statusMessage, setStatusMessage] = useState('');
@@ -90,6 +92,10 @@ function SavedVideoPage() {
   );
 
   const loadVideos = useCallback(async () => {
+    if (isSavedVideoPlaying) {
+      return;
+    }
+
     setIsLoadingVideos(true);
     setErrorMessage('');
 
@@ -102,7 +108,7 @@ function SavedVideoPage() {
     } finally {
       setIsLoadingVideos(false);
     }
-  }, []);
+  }, [isSavedVideoPlaying]);
 
   useEffect(() => {
     let isCancelled = false;
@@ -265,7 +271,46 @@ function SavedVideoPage() {
     }
   };
 
+  const handleResetVideos = async () => {
+    if (videos.length === 0 || isResettingVideos || isSavedVideoPlaying) {
+      return;
+    }
+
+    const shouldReset = window.confirm(
+      '저장된 영상 목록을 비우시겠습니까? 영상 데이터는 서버에 보관됩니다.',
+    );
+
+    if (!shouldReset) {
+      return;
+    }
+
+    setIsResettingVideos(true);
+    setStatusMessage('');
+    setErrorMessage('');
+
+    try {
+      const payload = await resetVideos();
+      const hiddenCount = payload?.data?.hiddenCount ?? 0;
+
+      setVideos([]);
+      setPreview(null);
+      setSelectedVideoId(null);
+      setIsSavedVideoPlaying(false);
+      setStatusMessage(`저장된 영상 ${hiddenCount}건이 목록에서 삭제되었습니다.`);
+    } catch (error) {
+      setErrorMessage(error.message || '저장된 영상을 리셋하지 못했습니다.');
+    } finally {
+      setIsResettingVideos(false);
+    }
+  };
+
   const isAddDisabled = isUploading || isLoadingPlayback || isSavedVideoPlaying;
+  const isVideoListActionDisabled =
+    isLoadingVideos ||
+    isUploading ||
+    isLoadingPlayback ||
+    isResettingVideos ||
+    isSavedVideoPlaying;
 
   return (
     <div className="saved-video-container">
@@ -299,9 +344,7 @@ function SavedVideoPage() {
                   src={previewVideo.url}
                   controls
                   playsInline
-                  onPlay={() =>
-                    setIsSavedVideoPlaying(previewVideo.type === 'saved')
-                  }
+                  onPlay={() => setIsSavedVideoPlaying(true)}
                   onPause={() => setIsSavedVideoPlaying(false)}
                   onEnded={() => setIsSavedVideoPlaying(false)}
                 />
@@ -346,14 +389,24 @@ function SavedVideoPage() {
             <div className="saved-video-list-header">
               <h2>영상 목록</h2>
 
-              <button
-                className="video-refresh-btn"
-                type="button"
-                onClick={loadVideos}
-                disabled={isLoadingVideos || isUploading || isLoadingPlayback}
-              >
-                새로고침
-              </button>
+              <div className="video-list-actions">
+                <button
+                  className="video-refresh-btn"
+                  type="button"
+                  onClick={loadVideos}
+                  disabled={isVideoListActionDisabled}
+                >
+                  새로고침
+                </button>
+                <button
+                  className="video-reset-btn"
+                  type="button"
+                  onClick={handleResetVideos}
+                  disabled={isVideoListActionDisabled || videos.length === 0}
+                >
+                  리셋
+                </button>
+              </div>
             </div>
 
             {isLoadingVideos ? (

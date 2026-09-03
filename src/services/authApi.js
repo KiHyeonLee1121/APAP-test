@@ -5,6 +5,14 @@ let defaultAccessToken = getStoredAccessToken();
 
 const getFrontendOrigin = () => window.location.origin;
 
+const resolveAccessToken = (token) => {
+  if (token !== undefined) {
+    return token || '';
+  }
+
+  return getStoredAccessToken() || defaultAccessToken || '';
+};
+
 const buildApiUrl = (path) => {
   const apiBaseUrl = getApiBaseUrl();
 
@@ -59,7 +67,7 @@ export const apiRequest = async (
   { method = 'GET', body, headers = {}, token, auth = true } = {},
 ) => {
   const requestHeaders = { ...headers };
-  const accessToken = token ?? defaultAccessToken;
+  const accessToken = resolveAccessToken(token);
   const isFormData = body instanceof FormData;
 
   if (body !== undefined && !isFormData) {

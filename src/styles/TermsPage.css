@@ -1,6 +1,7 @@
 .terms-container {
   width: 100%;
   min-height: 100vh;
+  color-scheme: only light;
 
   background: #ffffff;
 

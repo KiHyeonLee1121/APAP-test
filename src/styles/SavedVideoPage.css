@@ -182,8 +182,17 @@
   color: #c62828;
 }
 
+.video-list-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  flex-shrink: 0;
+}
+
 .video-action-btn,
 .video-refresh-btn,
+.video-reset-btn,
 .upload-modal-buttons button {
   border: none;
 
@@ -207,8 +216,18 @@
   font-size: 14px;
 }
 
+.video-reset-btn {
+  min-width: 64px;
+  height: 34px;
+
+  background: #c62828;
+
+  font-size: 14px;
+}
+
 .video-action-btn:disabled,
 .video-refresh-btn:disabled,
+.video-reset-btn:disabled,
 .saved-video-row:disabled,
 .upload-modal-buttons button:disabled {
   cursor: not-allowed;

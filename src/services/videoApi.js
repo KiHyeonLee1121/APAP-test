@@ -34,6 +34,14 @@ export const requestVideoAnalysis = async (videoSourceId) => {
   return payload?.data;
 };
 
+export const resetVideos = async () => {
+  const payload = await apiRequest('/api/videos/reset', {
+    method: 'POST',
+  });
+
+  return payload;
+};
+
 const buildApiUrl = (path) => `${getApiBaseUrl()}${path}`;
 
 const getBlobErrorMessage = async (response) => {
