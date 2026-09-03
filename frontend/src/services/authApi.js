@@ -5,6 +5,14 @@ let defaultAccessToken = getStoredAccessToken();
 
 const getFrontendOrigin = () => window.location.origin;
 
+const resolveAccessToken = (token) => {
+  if (token !== undefined) {
+    return token || '';
+  }
+
+  return getStoredAccessToken() || defaultAccessToken || '';
+};
+
 const buildApiUrl = (path) => {
   const apiBaseUrl = getApiBaseUrl();
 
@@ -42,14 +50,27 @@ const getConnectionErrorMessage = () => {
   ].join(' ');
 };
 
+const getPayloadErrorMessage = (payload) => {
+  if (typeof payload === 'string') {
+    return payload;
+  }
+
+  if (typeof payload === 'object' && payload !== null) {
+    return payload.error?.message || payload.message || '';
+  }
+
+  return '';
+};
+
 export const apiRequest = async (
   path,
   { method = 'GET', body, headers = {}, token, auth = true } = {},
 ) => {
   const requestHeaders = { ...headers };
-  const accessToken = token ?? defaultAccessToken;
+  const accessToken = resolveAccessToken(token);
+  const isFormData = body instanceof FormData;
 
-  if (body !== undefined) {
+  if (body !== undefined && !isFormData) {
     requestHeaders['Content-Type'] = 'application/json';
   }
 
@@ -63,7 +84,12 @@ export const apiRequest = async (
     response = await fetch(buildApiUrl(path), {
       method,
       headers: requestHeaders,
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body:
+        body === undefined
+          ? undefined
+          : isFormData
+            ? body
+            : JSON.stringify(body),
     });
   } catch {
     throw new Error(getConnectionErrorMessage());
@@ -71,19 +97,9 @@ export const apiRequest = async (
 
   const payload = await parseResponseBody(response);
 
-  if (!response.ok) {
-    // 백엔드 에러 포맷: { success:false, error:{ code, message } }
-    const message =
-      (payload && typeof payload === 'object'
-        ? payload.error?.message || payload.message
-        : null) || `요청에 실패했습니다. (${response.status})`;
-
-    throw new Error(message);
-  }
-
-  if (payload?.success === false) {
+  if (!response.ok || payload?.success === false) {
     throw new Error(
-      payload.error?.message || payload.message || '요청에 실패했습니다.',
+      getPayloadErrorMessage(payload) || `요청에 실패했습니다. (${response.status})`,
     );
   }
 
@@ -113,6 +129,12 @@ export const fetchCurrentUser = async (token) => {
 
   return payload?.data;
 };
+
+export const deleteCurrentUser = async (token) =>
+  apiRequest('/api/auth/me', {
+    method: 'DELETE',
+    token,
+  });
 
 export const logoutWithAccessToken = async (token) => {
   await apiRequest('/api/auth/logout', {

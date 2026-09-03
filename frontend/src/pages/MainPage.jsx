@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { useAuth } from '../hooks/useAuth';
@@ -15,20 +14,9 @@ function MainPage() {
   const navigate = useNavigate();
   const { logout, user: currentUser } = useAuth();
 
-  const [showWithdrawModal, setShowWithdrawModal] = useState(false);
   const userName = currentUser?.name || currentUser?.email || '사용자';
 
   const handleLogout = async () => {
-    await logout();
-    navigate('/', { replace: true });
-  };
-
-  const handleWithdraw = async () => {
-    alert('회원 탈퇴');
-
-    // 추후 Spring Boot 연결
-    // axios.delete('/users/me');
-
     await logout();
     navigate('/', { replace: true });
   };
@@ -63,7 +51,7 @@ function MainPage() {
             <img src={video} alt="저장된 영상" />
           </div>
 
-          <p className="menu-title">저장된 영상</p>
+          <p className="menu-title">영상저장 및 분석</p>
 
           <div className="menu-line"></div>
         </div>
@@ -79,39 +67,17 @@ function MainPage() {
           <div className="menu-line"></div>
         </div>
 
-        {/* 회원 탈퇴 */}
-        <div className="menu-card" onClick={() => setShowWithdrawModal(true)}>
+        {/* 이용약관 */}
+        <div className="menu-card" onClick={() => navigate('/terms')}>
           <div className="image-box">
-            <img src={user} alt="회원정보" />
+            <img src={user} alt="이용약관" />
           </div>
 
-          <p className="menu-title">회원 탈퇴</p>
+          <p className="menu-title">이용약관</p>
 
           <div className="menu-line"></div>
         </div>
       </div>
-
-      {/* 탈퇴 모달 */}
-      {showWithdrawModal && (
-        <div className="modal-overlay">
-          <div className="withdraw-modal">
-            <div className="modal-message">정말 탈퇴하시겠습니까?</div>
-
-            <div className="modal-buttons">
-              <button className="modal-btn" onClick={handleWithdraw}>
-                네
-              </button>
-
-              <button
-                className="modal-btn"
-                onClick={() => setShowWithdrawModal(false)}
-              >
-                아니오
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
