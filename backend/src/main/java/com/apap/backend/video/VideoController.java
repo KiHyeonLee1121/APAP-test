@@ -1,8 +1,10 @@
 package com.apap.backend.video;
 
+import com.apap.backend.analysis.AnalysisJobRepository;
 import com.apap.backend.analysis.AnalysisService;
 import com.apap.backend.auth.AuthUser;
 import com.apap.backend.common.ApiResponse;
+import com.apap.backend.event.DetectionEventRepository;
 import com.apap.backend.storage.StorageService;
 import com.apap.backend.user.User;
 import com.apap.backend.user.UserRepository;
@@ -17,6 +19,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.MediaTypeFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -41,6 +44,8 @@ public class VideoController {
     private final UserRepository userRepository;
     private final StorageService storageService;
     private final AnalysisService analysisService;
+    private final AnalysisJobRepository analysisJobRepository;
+    private final DetectionEventRepository detectionEventRepository;
     private final boolean autoAnalyzeOnUpload;
 
     public VideoController(
@@ -48,12 +53,16 @@ public class VideoController {
             UserRepository userRepository,
             StorageService storageService,
             AnalysisService analysisService,
+            AnalysisJobRepository analysisJobRepository,
+            DetectionEventRepository detectionEventRepository,
             @Value("${apap.analysis.auto-on-upload:true}") boolean autoAnalyzeOnUpload
     ) {
         this.videoSourceRepository = videoSourceRepository;
         this.userRepository = userRepository;
         this.storageService = storageService;
         this.analysisService = analysisService;
+        this.analysisJobRepository = analysisJobRepository;
+        this.detectionEventRepository = detectionEventRepository;
         this.autoAnalyzeOnUpload = autoAnalyzeOnUpload;
     }
 
@@ -100,6 +109,26 @@ public class VideoController {
 
         return ApiResponse.ok(VideoResponse.from(videoSource, analysisJobId),
                 autoAnalyzeOnUpload ? "업로드 완료. 분석이 시작되었습니다." : "업로드가 완료되었습니다.");
+    }
+
+    /**
+     * 저장된 영상 리셋. 화면에서만 감추고 DB 행과 저장된 파일(S3/로컬)은 그대로 남긴다.
+     * 영상에 딸린 분석 작업과 감지 이벤트도 함께 숨겨 화면·집계가 어긋나지 않게 한다.
+     * 알림은 별도(POST /api/alerts/reset)로 리셋한다.
+     */
+    @PostMapping("/reset")
+    @Transactional
+    public ApiResponse<ResetResponse> reset(@AuthenticationPrincipal AuthUser authUser) {
+        Long userId = authUser.id();
+
+        // 영상보다 딸린 데이터를 먼저 숨겨야 한다. 영상을 먼저 숨기면
+        // 하위 조회 조건(video_sources)에서 걸러져 함께 처리되지 않는다.
+        detectionEventRepository.hideAllByUserId(userId);
+        analysisJobRepository.hideAllByUserId(userId);
+        int hiddenCount = videoSourceRepository.hideAllByUserId(userId);
+
+        return ApiResponse.ok(new ResetResponse(hiddenCount),
+                "저장된 영상 " + hiddenCount + "건을 목록에서 숨겼습니다. 데이터는 서버에 보관됩니다.");
     }
 
     @GetMapping
@@ -186,6 +215,10 @@ public class VideoController {
         String fileName = sourceUrl.substring(lastSeparator + 1);
 
         return hasText(fileName) ? fileName : videoSource.getName();
+    }
+
+    /** 리셋 결과: 화면에서 숨긴 건수 (DB 행은 삭제되지 않음) */
+    public record ResetResponse(int hiddenCount) {
     }
 
     public record VideoRequest(
