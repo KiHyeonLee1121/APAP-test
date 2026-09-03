@@ -4,6 +4,14 @@ server:
 spring:
   application:
     name: apap-backend
+  servlet:
+    multipart:
+      # 영상 업로드 용량 제한 해제. Spring 기본값(파일 1MB, 요청 10MB)으로는 영상을 올릴 수 없다.
+      # -1은 무제한. 필요하면 환경변수로 상한을 걸 수 있다(예: MAX_UPLOAD_SIZE=2GB).
+      max-file-size: ${MAX_UPLOAD_SIZE:-1}
+      max-request-size: ${MAX_UPLOAD_REQUEST_SIZE:-1}
+      # 메모리에 담지 않고 바로 임시 파일로 흘려보내 큰 영상에서도 메모리를 적게 쓴다.
+      file-size-threshold: 0
   datasource:
     url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:abnormal_alarm}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul
     driver-class-name: com.mysql.cj.jdbc.Driver
@@ -23,6 +31,9 @@ apap:
   base-url: ${BASE_URL:http://localhost:8080}
   # local 모드에서 업로드 파일이 저장되는 루트 디렉터리
   upload-dir: uploads
+  analysis:
+    # true면 영상 업로드만 해도 분석이 자동 시작된다(백그라운드 실행). false면 POST /api/analysis/jobs로 수동 요청.
+    auto-on-upload: ${ANALYSIS_AUTO_ON_UPLOAD:true}
   storage:
     # local(기본): uploads/ 디렉터리 저장 — 로컬 개발용 (이 계정은 액세스 키 발급 불가라 로컬 S3 접근 불가)
     # s3: AWS S3 저장 — EC2 인스턴스 프로파일 Role 필요, sourceUrl에 S3 키(videos/{uuid}-{filename}) 저장

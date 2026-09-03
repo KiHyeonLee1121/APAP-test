@@ -61,6 +61,15 @@ public class User extends BaseEntity {
         this.role = role;
     }
 
+    // 회원 탈퇴: soft delete 처리 + 개인정보 익명화(동일 구글 계정으로 재가입 가능하도록 unique 값도 치환)
+    public void withdraw() {
+        markDeleted();
+        this.email = "withdrawn_" + id + "@deleted.local";
+        this.googleSub = "withdrawn_" + id;
+        this.name = "탈퇴한 사용자";
+        this.pictureUrl = null;
+    }
+
     public Long getId() {
         return id;
     }

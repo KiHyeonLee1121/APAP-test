@@ -76,6 +76,14 @@
 ### POST /api/auth/logout — 로그아웃 (인증)
 무상태. `data: null`, 클라이언트가 토큰 폐기.
 
+### DELETE /api/auth/me — 회원 탈퇴 (인증)
+실제 삭제 대신 **soft delete + 개인정보 익명화**로 처리한다.
+- `deleted=true`로 표시하고 email/googleSub는 `withdrawn_{id}...`로, 이름은 `탈퇴한 사용자`로 치환, 프로필 이미지 제거
+- 탈퇴 후에는 토큰이 남아 있어도 조회되지 않는다(`404 NOT_FOUND`)
+- unique 값까지 치환하므로 **같은 구글 계정으로 재가입 가능**(새 계정으로 생성됨)
+
+응답: `data: null`, `message: "회원 탈퇴가 완료되었습니다."`
+
 ---
 
 ## Case (감지 케이스, 7월 회의 신규)
@@ -96,7 +104,7 @@
 ### GET /api/user-cases — 내 케이스 목록 (인증)
 위 UserCaseResponse 배열.
 
-> **알림 연계**: 비정상 이벤트로 Alert가 생성될 때 유저에게 활성 케이스가 있으면 알림 메시지로 해당 케이스의 `outMsg`를 사용한다(여러 개면 가장 먼저 등록한 활성 케이스 기준, 없으면 기본 메시지).
+> 현재 영상 분석 결과로는 Alert를 자동 생성하지 않는다. `outMsg`는 케이스 관리 응답값으로 유지한다.
 
 ---
 
@@ -104,19 +112,48 @@
 
 VideoResponse:
 ```json
-{ "id": 1, "userId": 1, "type": "UPLOAD", "name": "샘플", "sourceUrl": "uploads/x.mp4", "status": "READY" }
+{
+  "id": 1,
+  "userId": 1,
+  "type": "UPLOAD",
+  "name": "출입구 CCTV",
+  "author": "홍길동",
+  "sourceUrl": "uploads/x.mp4",
+  "status": "READY",
+  "createdAt": "2026-09-03T10:12:00",
+  "analysisJobId": 7
+}
 ```
 - `type`: `UPLOAD` | `CCTV` | `EDGE_GATEWAY`
 - `status`: `READY` | `ANALYZING` | `ERROR` | `DISABLED`
+- `name`: 영상 제목. 업로드 시 별도 제목을 보내지 않으면 원본 파일명을 사용
+- `author`: 영상 소유자인 로그인 사용자 이름
+- `createdAt`: 영상 저장 시각
+- `analysisJobId`: **업로드 시 자동 생성된 분석 작업 id**. 업로드 외 응답이나 자동 분석이 꺼진 경우 `null`
 
 | Method | Path | 권한 | 설명 |
 |---|---|---|---|
-| POST | `/api/videos` | MANAGER+ | 영상 소스 등록. body `{type, name, sourceUrl}` |
-| POST | `/api/videos/upload` | MANAGER+ | 파일 업로드(multipart `file`) → 저장 후 VideoSource 생성 |
+| POST | `/api/videos` | MANAGER+ | 영상 소스 등록. body `{type, name, sourceUrl}` (자동 분석 대상 아님) |
+| POST | `/api/videos/upload` | MANAGER+ | 파일 업로드(multipart `file`, 선택 `name`) → 저장 후 VideoSource 생성 + **분석 자동 시작** |
 | GET | `/api/videos` | 인증 | 내 영상 목록 |
 | GET | `/api/videos/{videoId}` | 인증(소유자) | 상세 |
+| GET | `/api/videos/{videoId}/content` | 인증(소유자) | 저장된 영상 파일 재생용 스트림 |
 | PATCH | `/api/videos/{videoId}` | MANAGER+(소유자) | 수정. body `{type, name, sourceUrl, status}` |
 | DELETE | `/api/videos/{videoId}` | MANAGER+(소유자) | soft delete |
+| POST | `/api/videos/reset` | MANAGER+ | **저장된 영상 전체 리셋** — 목록에서 숨김. 응답 `{hiddenCount}` |
+
+**리셋 동작 (POST /api/videos/reset)**
+- 내 영상 전부를 화면에서 감춘다. **DB 행과 저장된 파일(S3/로컬)은 지우지 않는다**(`deleted=true`로 표시만).
+- 영상에 딸린 **분석 작업·감지 이벤트도 함께 숨겨** 목록과 대시보드 집계가 어긋나지 않게 한다.
+- **알림은 건드리지 않는다.** 알림은 `POST /api/alerts/reset`으로 따로 리셋한다(화면이 분리되어 있어 각각 비울 수 있게 함).
+- 응답: `{ "hiddenCount": 12 }` + 데이터가 보관된다는 안내 메시지.
+
+**업로드 용량 제한 없음**: 영상 파일 크기 제한을 해제했다(Spring 기본값 파일 1MB/요청 10MB → 무제한). 필요 시 `MAX_UPLOAD_SIZE`로 상한을 걸 수 있다.
+
+**업로드 시 자동 분석**: `/api/videos/upload`로 파일을 올리면 별도 요청 없이 분석이 시작된다.
+- 업로드 API는 즉시 응답하고(AI 호출은 백그라운드 실행), 응답의 `analysisJobId`로 `GET /api/analysis/jobs/{jobId}`를 조회해 진행 상황을 확인한다.
+- 영상 상태는 `ANALYZING` → 성공 `READY` / 실패 `ERROR`로 바뀐다.
+- `apap.analysis.auto-on-upload=false`(환경변수 `ANALYSIS_AUTO_ON_UPLOAD`)로 끄면 기존처럼 `POST /api/analysis/jobs` 수동 요청만 동작한다.
 
 `sourceUrl` 의미 (저장 모드에 따라 다름):
 - **local 모드(기본)**: 업로드 디렉터리 기준 파일 경로 (예: `uploads/videos/{uuid}-{filename}`)
@@ -137,7 +174,7 @@ AnalysisJobResponse:
 
 | Method | Path | 권한 | 설명 |
 |---|---|---|---|
-| POST | `/api/analysis/jobs` | MANAGER+ | 분석 요청. body `{videoSourceId}`. AI 서버 `/predict/video` **동기 호출** 후 DetectionEvent 저장, ABNORMAL이면 Alert 생성 |
+| POST | `/api/analysis/jobs` | MANAGER+ | **재분석** 요청. body `{videoSourceId}`. AI 서버 `/predict/video` **동기 호출** 후 DetectionEvent 저장. 비정상 결과여도 Alert는 자동 생성하지 않음 (업로드는 자동 분석되므로 이 API는 다시 돌릴 때 사용) |
 | GET | `/api/analysis/jobs` | 인증 | 내 분석 작업 목록 |
 | GET | `/api/analysis/jobs/{jobId}` | 인증 | 분석 작업 상세 |
 | POST | `/api/analysis/callback` | 공개 | 엣지/AI가 결과 직접 전송. body 아래 |
@@ -163,7 +200,7 @@ AnalysisJobResponse:
 ```
 - `eventType`: `NORMAL` | `ABNORMAL` | `FALL` | `INTRUSION` | `ANOMALOUS` | `UNKNOWN`
 - `severity`: `LOW` | `MEDIUM` | `HIGH` | `CRITICAL`
-- `ABNORMAL/FALL/INTRUSION/ANOMALOUS`는 Alert 자동 생성
+- `ABNORMAL/FALL/INTRUSION/ANOMALOUS`도 DetectionEvent만 저장하고 Alert는 자동 생성하지 않는다.
 
 ---
 
@@ -215,6 +252,13 @@ AlertResponse:
 | GET | `/api/alerts` | 인증 | 내 알림 목록 |
 | PATCH | `/api/alerts/{alertId}/read` | MANAGER+(수신자) | 읽음 처리 |
 | POST | `/api/alerts/test` | MANAGER+ | 본인에게 테스트 알림 1건 생성 |
+| POST | `/api/alerts/reset` | MANAGER+ | **알림 전체 리셋** — 목록에서 숨김. 응답 `{hiddenCount}` |
+
+**리셋 동작 (POST /api/alerts/reset)**
+- 읽음/안읽음 구분 없이 내 알림 전부를 화면에서 감춘다. **DB 행은 지우지 않는다**(`deleted=true`로 표시만).
+- 대시보드의 `unreadAlerts` 집계에서도 함께 빠진다.
+- **영상은 건드리지 않는다.** 영상 리셋과 서로 독립적으로 동작한다.
+- 응답: `{ "hiddenCount": 30 }` + 데이터가 보관된다는 안내 메시지.
 
 ---
 
@@ -258,6 +302,8 @@ AlertResponse:
 | `APP_STORAGE_MODE` | 영상 저장 모드 `local`/`s3` | `local` |
 | `S3_BUCKET` | S3 버킷 이름 (s3 모드) | `project10-86-virg-apap-media` |
 | `AWS_REGION` | S3 리전 (s3 모드, 계정 정책상 고정) | `us-east-1` |
+| `ANALYSIS_AUTO_ON_UPLOAD` | 업로드 시 자동 분석 여부 | `true` |
+| `MAX_UPLOAD_SIZE` / `MAX_UPLOAD_REQUEST_SIZE` | 업로드 용량 상한 (`-1` 무제한) | `-1` |
 
 > S3 자격증명 환경변수는 **없다**. 이 AWS 계정은 액세스 키 발급이 불가하며, EC2 인스턴스 프로파일 Role(`SafeInstanceProfile-project10-86-virg`)로 자동 인증한다.
 

@@ -62,6 +62,11 @@ public class VideoSource extends BaseEntity {
         this.status = status;
     }
 
+    // 분석 진행 상태 반영 (ANALYZING → READY/ERROR)
+    public void changeStatus(VideoSourceStatus status) {
+        this.status = status;
+    }
+
     public Long getId() {
         return id;
     }

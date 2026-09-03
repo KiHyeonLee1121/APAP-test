@@ -14,11 +14,14 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.SQLRestriction;
 
 import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "alerts")
+// 리셋(숨김) 처리된 알림은 모든 조회에서 자동 제외된다. 행 자체는 DB에 남는다.
+@SQLRestriction("deleted = false")
 public class Alert extends BaseEntity {
 
     @Id
