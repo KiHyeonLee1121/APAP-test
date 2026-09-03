@@ -2,9 +2,12 @@ package com.apap.backend.storage;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.UrlResource;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -20,9 +23,11 @@ import java.nio.file.Path;
 public class LocalStorageService implements StorageService {
 
     private final Path uploadDir;
+    private final Path uploadRoot;
 
     public LocalStorageService(@Value("${apap.upload-dir}") String uploadDir) {
         this.uploadDir = Path.of(uploadDir);
+        this.uploadRoot = this.uploadDir.toAbsolutePath().normalize();
     }
 
     @Override
@@ -34,5 +39,32 @@ public class LocalStorageService implements StorageService {
         file.transferTo(absolutePath);
         // AI 서버가 다른 작업 디렉터리(cwd)에서 실행되므로 상대경로 대신 절대경로를 저장한다.
         return absolutePath.toString();
+    }
+
+    @Override
+    public StoredObject load(String sourceUrl) throws IOException {
+        Path savedPath = resolveSavedPath(sourceUrl);
+
+        if (!Files.isRegularFile(savedPath)) {
+            throw new FileNotFoundException("영상 파일을 찾을 수 없습니다.");
+        }
+
+        Resource resource = new UrlResource(savedPath.toUri());
+        String contentType = Files.probeContentType(savedPath);
+
+        return new StoredObject(resource, contentType, Files.size(savedPath));
+    }
+
+    private Path resolveSavedPath(String sourceUrl) throws IOException {
+        Path sourcePath = Path.of(sourceUrl);
+        Path savedPath = sourcePath.isAbsolute()
+                ? sourcePath.normalize()
+                : Path.of("").toAbsolutePath().resolve(sourcePath).normalize();
+
+        if (!savedPath.startsWith(uploadRoot)) {
+            throw new IOException("허용되지 않은 영상 경로입니다.");
+        }
+
+        return savedPath;
     }
 }

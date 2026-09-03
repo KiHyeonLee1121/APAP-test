@@ -152,11 +152,11 @@ http://localhost:8080/swagger-ui/index.html
 |---|---|
 | `auth` | 구글 로그인(OIDC 검증), JWT 발급/검증, 인증 필터, 사용자 find-or-create |
 | `user` | 사용자 계정, 권한(ADMIN/MANAGER/VIEWER) |
-| `video` | 영상 소스(UPLOAD/CCTV/EDGE_GATEWAY) 관리, soft delete |
+| `video` | 영상 소스(UPLOAD/CCTV/EDGE_GATEWAY) 관리, soft delete, 리셋 |
 | `storage` | 업로드 저장소 추상화 — local(파일)/s3(AWS S3) 모드 분기, 키 형식 `videos/{uuid}-{filename}` |
 | `analysis` | AI 서버 분석 요청, 콜백 수신, AnalysisJob 상태 관리 |
 | `event` | AI 결과로 생성된 DetectionEvent 저장/조회 |
-| `alert` | 이벤트 기반 알림 이력 |
+| `alert` | 알림 이력, 테스트 알림, 리셋 |
 | `dashboard` | 통계/요약/타임라인/심각도 조회 API |
 | `config` | Spring Security 설정, CORS, Swagger(OpenAPI) Bearer 스킴 |
 | `common` | ApiResponse, ApiError, BaseEntity, GlobalExceptionHandler |
@@ -172,7 +172,7 @@ http://localhost:8080/swagger-ui/index.html
    ```json
    { "prediction": "abnormal", "confidence": 0.91, "source": "...", "status": "success", "message": null }
    ```
-3. 백엔드가 `prediction`을 DetectionEventType(NORMAL/ABNORMAL)으로, `confidence`를 Severity로 변환해 DetectionEvent 저장. ABNORMAL이면 Alert 생성
+3. 백엔드가 `prediction`을 DetectionEventType(NORMAL/ABNORMAL)으로, `confidence`를 Severity로 변환해 DetectionEvent 저장. 비정상 결과여도 Alert는 자동 생성하지 않음
 
 보조 흐름(콜백): 엣지 디바이스(CCTV/카메라)가 직접 분석 결과를 보내는 경우 `POST /api/analysis/callback`으로 DetectionEvent 목록을 전송합니다. AI 모델 고도화 시 FALL/INTRUSION/ANOMALOUS 같은 이벤트 타입도 이 경로로 수용합니다.
 
@@ -188,6 +188,31 @@ http://localhost:8080/swagger-ui/index.html
 - `POST /api/analysis/jobs`는 **재분석** 용도로 계속 사용할 수 있습니다(동기 실행).
 
 > `video_path`에는 `VideoSource.sourceUrl`이 그대로 전달됩니다. local 모드에선 파일 경로, s3 모드에선 S3 객체 키(`videos/{uuid}-{filename}`)이며, s3 모드에서는 AI 서버가 이 키로 버킷에서 영상을 직접 읽습니다.
+
+## 저장된 영상 / 알림 리셋
+
+사용자가 화면을 비울 수 있는 리셋 기능입니다. **데이터를 지우지 않고 화면에서만 감춥니다.**
+
+| 기능 | API | 숨기는 대상 |
+|---|---|---|
+| 저장된 영상 리셋 | `POST /api/videos/reset` | 내 영상 + 그 영상의 분석 작업·감지 이벤트 |
+| 알림 리셋 | `POST /api/alerts/reset` | 내 알림 전부 (읽음/안읽음 무관) |
+
+- 두 리셋은 **서로 독립**입니다. 영상을 리셋해도 알림은 남고, 그 반대도 같습니다.
+- 응답에 숨긴 건수(`hiddenCount`)가 담깁니다.
+- **DB 행과 S3/로컬 파일은 지우지 않습니다.** `deleted` 값만 `true`로 바뀝니다.
+- 본인 데이터만 대상이며, 다른 사용자 데이터는 영향을 받지 않습니다.
+
+### 숨긴 데이터 되살리기
+
+복구 API는 없습니다. 필요하면 DB에서 직접 되돌립니다(예: 특정 사용자의 영상 복구).
+
+```sql
+UPDATE video_sources SET deleted = false WHERE user_id = 1;
+UPDATE analysis_jobs  SET deleted = false WHERE video_source_id IN (SELECT id FROM video_sources WHERE user_id = 1);
+UPDATE detection_events SET deleted = false WHERE video_source_id IN (SELECT id FROM video_sources WHERE user_id = 1);
+UPDATE alerts SET deleted = false WHERE receiver_id = 1;
+```
 
 ## S3 저장소 전환 (운영 배포 시)
 

@@ -120,7 +120,7 @@ class CaseAndLoginHistoryTest {
     }
 
     @Test
-    void 활성케이스가_있으면_알림메시지에_outMsg가_사용된다() throws Exception {
+    void 활성케이스가_있어도_비정상이벤트는_알림을_생성하지_않는다() throws Exception {
         User manager = saveUser("case-alert@example.com", UserRole.MANAGER);
         DetectionCase detectionCase = detectionCaseRepository.findAllByOrderByIdAsc().get(0);
         userCaseRepository.save(new UserCase(manager, detectionCase));
@@ -138,7 +138,6 @@ class CaseAndLoginHistoryTest {
 
         mockMvc.perform(get("/api/alerts").header(HttpHeaders.AUTHORIZATION, bearer(manager)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.length()").value(1))
-                .andExpect(jsonPath("$.data[0].message").value(detectionCase.getOutMsg()));
+                .andExpect(jsonPath("$.data.length()").value(0));
     }
 }

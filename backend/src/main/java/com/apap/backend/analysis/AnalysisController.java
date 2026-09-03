@@ -1,7 +1,5 @@
 package com.apap.backend.analysis;
 
-import com.apap.backend.alert.Alert;
-import com.apap.backend.alert.AlertRepository;
 import com.apap.backend.auth.AuthUser;
 import com.apap.backend.common.ApiResponse;
 import com.apap.backend.event.DetectionEvent;
@@ -30,20 +28,17 @@ public class AnalysisController {
     private final AnalysisJobRepository analysisJobRepository;
     private final VideoSourceRepository videoSourceRepository;
     private final DetectionEventRepository detectionEventRepository;
-    private final AlertRepository alertRepository;
     private final AnalysisService analysisService;
 
     public AnalysisController(
             AnalysisJobRepository analysisJobRepository,
             VideoSourceRepository videoSourceRepository,
             DetectionEventRepository detectionEventRepository,
-            AlertRepository alertRepository,
             AnalysisService analysisService
     ) {
         this.analysisJobRepository = analysisJobRepository;
         this.videoSourceRepository = videoSourceRepository;
         this.detectionEventRepository = detectionEventRepository;
-        this.alertRepository = alertRepository;
         this.analysisService = analysisService;
     }
 
@@ -82,7 +77,7 @@ public class AnalysisController {
         analysisJobRepository.save(job);
 
         for (DetectionEventRequest eventRequest : request.events()) {
-            DetectionEvent event = detectionEventRepository.save(new DetectionEvent(
+            detectionEventRepository.save(new DetectionEvent(
                     job,
                     eventRequest.eventType(),
                     eventRequest.severity(),
@@ -92,16 +87,6 @@ public class AnalysisController {
                     eventRequest.clipUrl(),
                     eventRequest.resultJson()
             ));
-
-            if (eventRequest.eventType() == DetectionEventType.ABNORMAL
-                    || eventRequest.eventType() == DetectionEventType.FALL
-                    || eventRequest.eventType() == DetectionEventType.INTRUSION
-                    || eventRequest.eventType() == DetectionEventType.ANOMALOUS) {
-                String message = analysisService.resolveAlertMessage(
-                        job.getVideoSource().getUser().getId(),
-                        "비정상 행동이 감지되었습니다. severity=" + eventRequest.severity());
-                alertRepository.save(new Alert(event, job.getVideoSource().getUser(), message));
-            }
         }
 
         return ApiResponse.ok(null, "분석 결과가 저장되었습니다.");

@@ -74,7 +74,6 @@ flowchart LR
     B["POST /api/analysis/jobs (재분석, 동기)"] --> C
     C --> D["normal/abnormal + confidence 수신"]
     D --> E["DetectionEvent 저장"]
-    E -->|ABNORMAL| F["Alert 생성 (활성 케이스 out_msg)"]
     E --> S["영상 상태 READY / 실패 시 ERROR"]
     E --> G["대시보드/이벤트 조회"]
     H["엣지/배치 결과"] -->|POST /api/analysis/callback| E
@@ -89,7 +88,7 @@ flowchart LR
 - 클라이언트는 응답의 `analysisJobId`로 `GET /api/analysis/jobs/{jobId}`를 폴링해 진행 상황을 본다.
 - 완료 시 영상 상태를 `READY`(실패 `ERROR`)로 정리한다.
 - 백그라운드 스레드는 요청 세션 밖이라 `AnalysisJob`을 조회할 때 `videoSource`/`user`를 **join fetch로 함께 로딩**한다(LAZY 접근 실패 방지).
-- 수동/자동 경로가 `AnalysisService` 하나를 공유하므로 AI 호출·이벤트 저장·알림 생성 로직이 중복되지 않는다.
+- 수동/자동 경로가 `AnalysisService` 하나를 공유하므로 AI 호출·이벤트 저장 로직이 중복되지 않는다.
 - `apap.analysis.auto-on-upload=false`로 끌 수 있고, 자동 분석은 `UPLOAD` 타입에만 적용된다(URL로 등록한 CCTV 등은 제외).
 
 - 재분석은 **동기 호출**(`POST /api/analysis/jobs`). 실패 시 AnalysisJob `FAILED`.
@@ -120,12 +119,27 @@ erDiagram
     USER ||--o{ VIDEO_SOURCE : owns
     VIDEO_SOURCE ||--o{ ANALYSIS_JOB : analyzed_by
     ANALYSIS_JOB ||--o{ DETECTION_EVENT : produces
-    DETECTION_EVENT ||--o{ ALERT : triggers
+    DETECTION_EVENT |o--o{ ALERT : references
     USER ||--o{ ALERT : receives
 ```
 
 - 모든 엔티티는 `created_at`, `updated_at`, `deleted`(soft delete 플래그) 보유.
 - `VideoSource`는 soft delete 적용(`@SQLRestriction`), 삭제 시 `deleted=true`.
+- **`AnalysisJob` / `DetectionEvent` / `Alert`에도 `@SQLRestriction("deleted = false")` 적용**(리셋 기능 도입 시 추가). 숨긴 데이터가 목록·상세·대시보드 집계에서 자동으로 빠진다.
+
+### 리셋(숨김) 동작
+
+"저장된 영상 리셋"과 "알림 리셋"은 데이터를 지우지 않고 화면에서만 감춘다.
+
+| 구분 | API | 숨기는 대상 | 건드리지 않는 것 |
+|---|---|---|---|
+| 영상 리셋 | `POST /api/videos/reset` | 내 영상 + 그 영상의 분석 작업·감지 이벤트 | 알림, S3/로컬 파일 |
+| 알림 리셋 | `POST /api/alerts/reset` | 내 알림 전부(읽음 무관) | 영상, 이벤트 |
+
+- 두 리셋은 **서로 독립**이다. 화면이 "저장된 영상"과 "알림 내역"으로 나뉘어 있어 각각 비울 수 있어야 하기 때문.
+- 벌크 숨김은 네이티브 `UPDATE ... SET deleted = true`로 처리한다. `@SQLRestriction`은 조회에만 적용되고 벌크 UPDATE에는 적용되지 않기 때문.
+- 영상 리셋 시 **딸린 데이터를 먼저 숨기고 영상을 나중에 숨긴다.** 영상을 먼저 숨기면 하위 조회 조건(`video_sources`)에서 걸러져 함께 처리되지 않는다.
+- 데이터가 남아 있으므로 필요 시 DB에서 `deleted = false`로 되돌려 복구할 수 있다.
 - `Alert.detection_event_id`는 nullable(테스트/시스템 알림).
 
 ## 보안 / 공개 경로
@@ -140,14 +154,13 @@ erDiagram
 - 운영(목표): 백엔드 Docker 이미지(EC2/ECS 등) + 관리형 MySQL(RDS). 비밀값은 환경변수/시크릿으로 주입.
 - 스키마: 개발은 `ddl-auto: update`, 운영은 `validate` + 마이그레이션 도구(Flyway 등) 권장.
 
-## 케이스 기반 알림 흐름 (7월 회의 반영)
+## 케이스 등록 흐름 (7월 회의 반영)
 
 ```text
 [시드] 감지 케이스 4종(한강 교각/식당 식권/영화관 입장/마트 은닉) 자동 등록
 사용자 → POST /api/user-cases (케이스 구독, out_msg 응답)
-AI 판정 ABNORMAL → DetectionEvent 저장 → Alert 생성 시
-  유저의 활성 케이스가 있으면 그 케이스의 out_msg를 알림 메시지로 사용
-  (없으면 기본 메시지 유지)
+AI 판정 ABNORMAL → DetectionEvent 저장
+  현재는 알림 내역으로 Alert를 자동 생성하지 않음
 로그인 시 login_history에 (user_id, 로그인 시각) 자동 기록
 ```
 

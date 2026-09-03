@@ -1,5 +1,6 @@
 package com.apap.backend.analysis;
 
+import com.apap.backend.alert.AlertRepository;
 import com.apap.backend.auth.GoogleTokenVerifier;
 import com.apap.backend.auth.JwtTokenProvider;
 import com.apap.backend.event.DetectionEventRepository;
@@ -50,6 +51,8 @@ class AutoAnalysisTest {
     AnalysisJobRepository analysisJobRepository;
     @Autowired
     DetectionEventRepository detectionEventRepository;
+    @Autowired
+    AlertRepository alertRepository;
     @Autowired
     JwtTokenProvider jwtTokenProvider;
     @Autowired
@@ -134,6 +137,7 @@ class AutoAnalysisTest {
     void 자동분석_성공시_이벤트가_저장되고_상태가_READY로_바뀐다() throws Exception {
         User manager = saveManager("auto2@example.com");
         long eventsBefore = detectionEventRepository.count();
+        long alertsBefore = alertRepository.count();
 
         MvcResult result = upload(manager, "auto-2.mp4");
         JsonNode data = objectMapper.readTree(result.getResponse().getContentAsString()).get("data");
@@ -143,6 +147,7 @@ class AutoAnalysisTest {
 
         // AI가 abnormal을 돌려주므로 감지 이벤트가 쌓여야 한다
         assertThat(detectionEventRepository.count()).isEqualTo(eventsBefore + 1);
+        assertThat(alertRepository.count()).isEqualTo(alertsBefore);
 
         // 분석이 끝나면 영상 상태가 ANALYZING → READY 로 정리된다
         assertThat(videoSourceRepository.findById(data.get("id").asLong()).orElseThrow().getStatus())

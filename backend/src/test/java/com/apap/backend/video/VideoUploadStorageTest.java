@@ -30,8 +30,10 @@ import java.nio.file.Path;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -139,6 +141,46 @@ class VideoUploadStorageTest {
         assertThat(savedPath.getFileName().toString())
                 .matches("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-sample\\.mp4");
         assertThat(Files.exists(savedPath)).isTrue();
+    }
+
+    @Test
+    void 업로드시_제목_작성자_작성시간을_반환한다() throws Exception {
+        User manager = saveManager();
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "sample.mp4", "video/mp4", "dummy-video".getBytes());
+
+        mockMvc.perform(multipart("/api/videos/upload")
+                        .file(file)
+                        .param("name", "출입구 CCTV")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(manager)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.name").value("출입구 CCTV"))
+                .andExpect(jsonPath("$.data.author").value("업로더"))
+                .andExpect(jsonPath("$.data.createdAt").isNotEmpty());
+    }
+
+    @Test
+    void 업로드된_영상은_다시_재생용으로_조회할_수_있다() throws Exception {
+        User manager = saveManager();
+        byte[] videoBytes = "playback-video".getBytes(StandardCharsets.UTF_8);
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "playback.mp4", "video/mp4", videoBytes);
+
+        MvcResult uploadResult = mockMvc.perform(multipart("/api/videos/upload")
+                        .file(file)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(manager)))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        long videoId = objectMapper.readTree(uploadResult.getResponse().getContentAsString())
+                .get("data")
+                .get("id")
+                .asLong();
+
+        mockMvc.perform(get("/api/videos/" + videoId + "/content")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(manager)))
+                .andExpect(status().isOk())
+                .andExpect(content().bytes(videoBytes));
     }
 
     @Test

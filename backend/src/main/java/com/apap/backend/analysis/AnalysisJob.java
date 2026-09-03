@@ -13,11 +13,14 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.SQLRestriction;
 
 import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "analysis_jobs")
+// 영상 리셋(숨김) 시 함께 숨겨진 작업은 모든 조회·집계에서 자동 제외된다. 행 자체는 DB에 남는다.
+@SQLRestriction("deleted = false")
 public class AnalysisJob extends BaseEntity {
 
     @Id
