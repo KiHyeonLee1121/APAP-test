@@ -156,7 +156,7 @@ http://localhost:8080/swagger-ui/index.html
 | `storage` | 업로드 저장소 추상화 — local(파일)/s3(AWS S3) 모드 분기, 키 형식 `videos/{uuid}-{filename}` |
 | `analysis` | AI 서버 분석 요청, 콜백 수신, AnalysisJob 상태 관리 |
 | `event` | AI 결과로 생성된 DetectionEvent 저장/조회 |
-| `alert` | 이벤트 기반 알림 이력 |
+| `alert` | 알림 이력, 테스트 알림, 리셋 |
 | `dashboard` | 통계/요약/타임라인/심각도 조회 API |
 | `config` | Spring Security 설정, CORS, Swagger(OpenAPI) Bearer 스킴 |
 | `common` | ApiResponse, ApiError, BaseEntity, GlobalExceptionHandler |
@@ -172,7 +172,7 @@ http://localhost:8080/swagger-ui/index.html
    ```json
    { "prediction": "abnormal", "confidence": 0.91, "source": "...", "status": "success", "message": null }
    ```
-3. 백엔드가 `prediction`을 DetectionEventType(NORMAL/ABNORMAL)으로, `confidence`를 Severity로 변환해 DetectionEvent 저장. ABNORMAL이면 Alert 생성
+3. 백엔드가 `prediction`을 DetectionEventType(NORMAL/ABNORMAL)으로, `confidence`를 Severity로 변환해 DetectionEvent 저장. 비정상 결과여도 Alert는 자동 생성하지 않음
 
 보조 흐름(콜백): 엣지 디바이스(CCTV/카메라)가 직접 분석 결과를 보내는 경우 `POST /api/analysis/callback`으로 DetectionEvent 목록을 전송합니다. AI 모델 고도화 시 FALL/INTRUSION/ANOMALOUS 같은 이벤트 타입도 이 경로로 수용합니다.
 

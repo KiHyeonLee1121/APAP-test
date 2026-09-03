@@ -104,7 +104,7 @@
 ### GET /api/user-cases — 내 케이스 목록 (인증)
 위 UserCaseResponse 배열.
 
-> **알림 연계**: 비정상 이벤트로 Alert가 생성될 때 유저에게 활성 케이스가 있으면 알림 메시지로 해당 케이스의 `outMsg`를 사용한다(여러 개면 가장 먼저 등록한 활성 케이스 기준, 없으면 기본 메시지).
+> 현재 영상 분석 결과로는 Alert를 자동 생성하지 않는다. `outMsg`는 케이스 관리 응답값으로 유지한다.
 
 ---
 
@@ -174,7 +174,7 @@ AnalysisJobResponse:
 
 | Method | Path | 권한 | 설명 |
 |---|---|---|---|
-| POST | `/api/analysis/jobs` | MANAGER+ | **재분석** 요청. body `{videoSourceId}`. AI 서버 `/predict/video` **동기 호출** 후 DetectionEvent 저장, ABNORMAL이면 Alert 생성 (업로드는 자동 분석되므로 이 API는 다시 돌릴 때 사용) |
+| POST | `/api/analysis/jobs` | MANAGER+ | **재분석** 요청. body `{videoSourceId}`. AI 서버 `/predict/video` **동기 호출** 후 DetectionEvent 저장. 비정상 결과여도 Alert는 자동 생성하지 않음 (업로드는 자동 분석되므로 이 API는 다시 돌릴 때 사용) |
 | GET | `/api/analysis/jobs` | 인증 | 내 분석 작업 목록 |
 | GET | `/api/analysis/jobs/{jobId}` | 인증 | 분석 작업 상세 |
 | POST | `/api/analysis/callback` | 공개 | 엣지/AI가 결과 직접 전송. body 아래 |
@@ -200,7 +200,7 @@ AnalysisJobResponse:
 ```
 - `eventType`: `NORMAL` | `ABNORMAL` | `FALL` | `INTRUSION` | `ANOMALOUS` | `UNKNOWN`
 - `severity`: `LOW` | `MEDIUM` | `HIGH` | `CRITICAL`
-- `ABNORMAL/FALL/INTRUSION/ANOMALOUS`는 Alert 자동 생성
+- `ABNORMAL/FALL/INTRUSION/ANOMALOUS`도 DetectionEvent만 저장하고 Alert는 자동 생성하지 않는다.
 
 ---
 
