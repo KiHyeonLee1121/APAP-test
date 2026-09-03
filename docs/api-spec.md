@@ -140,6 +140,13 @@ VideoResponse:
 | GET | `/api/videos/{videoId}/content` | 인증(소유자) | 저장된 영상 파일 재생용 스트림 |
 | PATCH | `/api/videos/{videoId}` | MANAGER+(소유자) | 수정. body `{type, name, sourceUrl, status}` |
 | DELETE | `/api/videos/{videoId}` | MANAGER+(소유자) | soft delete |
+| POST | `/api/videos/reset` | MANAGER+ | **저장된 영상 전체 리셋** — 목록에서 숨김. 응답 `{hiddenCount}` |
+
+**리셋 동작 (POST /api/videos/reset)**
+- 내 영상 전부를 화면에서 감춘다. **DB 행과 저장된 파일(S3/로컬)은 지우지 않는다**(`deleted=true`로 표시만).
+- 영상에 딸린 **분석 작업·감지 이벤트도 함께 숨겨** 목록과 대시보드 집계가 어긋나지 않게 한다.
+- **알림은 건드리지 않는다.** 알림은 `POST /api/alerts/reset`으로 따로 리셋한다(화면이 분리되어 있어 각각 비울 수 있게 함).
+- 응답: `{ "hiddenCount": 12 }` + 데이터가 보관된다는 안내 메시지.
 
 **업로드 용량 제한 없음**: 영상 파일 크기 제한을 해제했다(Spring 기본값 파일 1MB/요청 10MB → 무제한). 필요 시 `MAX_UPLOAD_SIZE`로 상한을 걸 수 있다.
 
@@ -245,6 +252,13 @@ AlertResponse:
 | GET | `/api/alerts` | 인증 | 내 알림 목록 |
 | PATCH | `/api/alerts/{alertId}/read` | MANAGER+(수신자) | 읽음 처리 |
 | POST | `/api/alerts/test` | MANAGER+ | 본인에게 테스트 알림 1건 생성 |
+| POST | `/api/alerts/reset` | MANAGER+ | **알림 전체 리셋** — 목록에서 숨김. 응답 `{hiddenCount}` |
+
+**리셋 동작 (POST /api/alerts/reset)**
+- 읽음/안읽음 구분 없이 내 알림 전부를 화면에서 감춘다. **DB 행은 지우지 않는다**(`deleted=true`로 표시만).
+- 대시보드의 `unreadAlerts` 집계에서도 함께 빠진다.
+- **영상은 건드리지 않는다.** 영상 리셋과 서로 독립적으로 동작한다.
+- 응답: `{ "hiddenCount": 30 }` + 데이터가 보관된다는 안내 메시지.
 
 ---
 

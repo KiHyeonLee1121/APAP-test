@@ -126,6 +126,21 @@ erDiagram
 
 - 모든 엔티티는 `created_at`, `updated_at`, `deleted`(soft delete 플래그) 보유.
 - `VideoSource`는 soft delete 적용(`@SQLRestriction`), 삭제 시 `deleted=true`.
+- **`AnalysisJob` / `DetectionEvent` / `Alert`에도 `@SQLRestriction("deleted = false")` 적용**(리셋 기능 도입 시 추가). 숨긴 데이터가 목록·상세·대시보드 집계에서 자동으로 빠진다.
+
+### 리셋(숨김) 동작
+
+"저장된 영상 리셋"과 "알림 리셋"은 데이터를 지우지 않고 화면에서만 감춘다.
+
+| 구분 | API | 숨기는 대상 | 건드리지 않는 것 |
+|---|---|---|---|
+| 영상 리셋 | `POST /api/videos/reset` | 내 영상 + 그 영상의 분석 작업·감지 이벤트 | 알림, S3/로컬 파일 |
+| 알림 리셋 | `POST /api/alerts/reset` | 내 알림 전부(읽음 무관) | 영상, 이벤트 |
+
+- 두 리셋은 **서로 독립**이다. 화면이 "저장된 영상"과 "알림 내역"으로 나뉘어 있어 각각 비울 수 있어야 하기 때문.
+- 벌크 숨김은 네이티브 `UPDATE ... SET deleted = true`로 처리한다. `@SQLRestriction`은 조회에만 적용되고 벌크 UPDATE에는 적용되지 않기 때문.
+- 영상 리셋 시 **딸린 데이터를 먼저 숨기고 영상을 나중에 숨긴다.** 영상을 먼저 숨기면 하위 조회 조건(`video_sources`)에서 걸러져 함께 처리되지 않는다.
+- 데이터가 남아 있으므로 필요 시 DB에서 `deleted = false`로 되돌려 복구할 수 있다.
 - `Alert.detection_event_id`는 nullable(테스트/시스템 알림).
 
 ## 보안 / 공개 경로
