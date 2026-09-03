@@ -30,7 +30,9 @@ public class LocalStorageService implements StorageService {
         String key = StorageKeys.buildVideoKey(file.getOriginalFilename());
         Path savedPath = uploadDir.resolve(key);
         Files.createDirectories(savedPath.getParent());
-        file.transferTo(savedPath.toAbsolutePath());
-        return savedPath.toString();
+        Path absolutePath = savedPath.toAbsolutePath().normalize();
+        file.transferTo(absolutePath);
+        // AI 서버가 다른 작업 디렉터리(cwd)에서 실행되므로 상대경로 대신 절대경로를 저장한다.
+        return absolutePath.toString();
     }
 }
