@@ -4,8 +4,10 @@ import argparse
 import os
 import sys
 import time
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from typing import Iterator
 
 import numpy as np
 
@@ -88,17 +90,39 @@ def _reconnect(
     return False
 
 
-def run_realtime_rtsp_inference(
+@dataclass
+class LiveFrameResult:
+    """One decoded frame plus the current anomaly verdict.
+
+    ``error`` is set only on frames where a NEW window judgment was made
+    (every stride); it is None on the frames in between, which simply carry
+    the most recent ``label`` forward.
+    """
+
+    frame: np.ndarray  # raw BGR frame, not yet annotated
+    label: str  # "warming_up" | "NORMAL" | "ABNORMAL"
+    threshold: float
+    error: float | None = None
+    is_anomaly: bool = False
+
+
+def iter_live_results(
     rtsp_url: str,
     model_path: str | Path = AUTOENCODER_PATH,
-    display: bool = False,
     duration_seconds: float | None = None,
     max_reconnect_attempts: int = 10,
     reconnect_delay_seconds: float = 1.0,
     min_detection_confidence: float = 0.5,
     min_tracking_confidence: float = 0.5,
     model_complexity: int = 1,
-) -> None:
+) -> Iterator[LiveFrameResult]:
+    """Yield one LiveFrameResult per decoded frame from an RTSP/video source.
+
+    Single source of truth for realtime detection: both the CLI
+    (run_realtime_rtsp_inference) and the API's MJPEG stream consume this, so
+    the console demo and the web view always agree. Cleans up the pose model
+    and capture when the consumer stops iterating.
+    """
     _require_realtime_dependencies()
 
     model, scaler, threshold = load_autoencoder(model_path)
@@ -133,13 +157,13 @@ def run_realtime_rtsp_inference(
     frames_since_prediction = 0
     consecutive_read_failures = 0
     start_time = time.monotonic()
-    last_overlay_label = "warming_up"
+    last_label = "warming_up"
 
     try:
         while True:
             if duration_seconds is not None and (time.monotonic() - start_time) >= duration_seconds:
                 log_info(f"지정된 실행 시간({duration_seconds}s) 경과. 종료합니다.")
-                break
+                return
 
             success, frame = video_source.read()
             if not success:
@@ -147,7 +171,7 @@ def run_realtime_rtsp_inference(
                 log_error(f"프레임 읽기 실패 (연속 {consecutive_read_failures}회).")
                 if not _reconnect(video_source, max_reconnect_attempts, reconnect_delay_seconds):
                     log_error("최대 재연결 시도 횟수를 초과했습니다. 종료합니다.")
-                    break
+                    return
                 consecutive_read_failures = 0
                 # Re-derive fps/window sizing in case the reconnected stream differs.
                 fps, used_fallback = _resolve_fps(video_source)
@@ -160,10 +184,7 @@ def run_realtime_rtsp_inference(
             result = pose.process(rgb_frame)
 
             if result.pose_landmarks is None:
-                if display:
-                    _draw_overlay(frame, last_overlay_label)
-                    if _show_and_check_quit(frame):
-                        break
+                yield LiveFrameResult(frame=frame, label=last_label, threshold=threshold)
                 continue
 
             landmark_buffer.add_frame(_landmarks_to_array(result.pose_landmarks))
@@ -177,29 +198,101 @@ def run_realtime_rtsp_inference(
                 errors = compute_window_errors(window, fps, model, scaler)
                 error = float(np.max(errors))
                 is_anomaly = error > threshold
-                timestamp = datetime.now().strftime("%H:%M:%S")
+                last_label = "ABNORMAL" if is_anomaly else "NORMAL"
+                yield LiveFrameResult(
+                    frame=frame,
+                    label=last_label,
+                    threshold=threshold,
+                    error=error,
+                    is_anomaly=is_anomaly,
+                )
+                continue
 
-                if is_anomaly:
-                    print(f"[ABNORMAL] 오차: {error:.4f} > threshold {threshold:.4f}, 시각: {timestamp}")
-                    last_overlay_label = "ABNORMAL"
-                else:
-                    print(f"[normal]   오차: {error:.4f} <= threshold {threshold:.4f}, 시각: {timestamp}")
-                    last_overlay_label = "NORMAL"
-
-            if display:
-                _draw_overlay(frame, last_overlay_label)
-                if _show_and_check_quit(frame):
-                    break
+            yield LiveFrameResult(frame=frame, label=last_label, threshold=threshold)
     finally:
         pose.close()
         video_source.release()
+
+
+def run_realtime_rtsp_inference(
+    rtsp_url: str,
+    model_path: str | Path = AUTOENCODER_PATH,
+    display: bool = False,
+    duration_seconds: float | None = None,
+    max_reconnect_attempts: int = 10,
+    reconnect_delay_seconds: float = 1.0,
+    min_detection_confidence: float = 0.5,
+    min_tracking_confidence: float = 0.5,
+    model_complexity: int = 1,
+) -> None:
+    results = iter_live_results(
+        rtsp_url=rtsp_url,
+        model_path=model_path,
+        duration_seconds=duration_seconds,
+        max_reconnect_attempts=max_reconnect_attempts,
+        reconnect_delay_seconds=reconnect_delay_seconds,
+        min_detection_confidence=min_detection_confidence,
+        min_tracking_confidence=min_tracking_confidence,
+        model_complexity=model_complexity,
+    )
+
+    try:
+        for result in results:
+            if result.error is not None:
+                timestamp = datetime.now().strftime("%H:%M:%S")
+                if result.is_anomaly:
+                    print(
+                        f"[ABNORMAL] 오차: {result.error:.4f} > threshold "
+                        f"{result.threshold:.4f}, 시각: {timestamp}"
+                    )
+                else:
+                    print(
+                        f"[normal]   오차: {result.error:.4f} <= threshold "
+                        f"{result.threshold:.4f}, 시각: {timestamp}"
+                    )
+
+            if display:
+                draw_overlay(result.frame, result.label)
+                if _show_and_check_quit(result.frame):
+                    break
+    finally:
+        results.close()
         if display and cv2 is not None:
             cv2.destroyAllWindows()
 
 
-def _draw_overlay(frame: np.ndarray, label: str) -> None:
+def draw_overlay(frame: np.ndarray, label: str) -> None:
+    """Draw the current verdict on the frame, sized relative to the frame.
+
+    A fixed font scale is unreadable on a 4K frame and oversized on a 360p one,
+    so scale with frame height and draw a filled backing box for contrast.
+    """
     color = (0, 0, 255) if label == "ABNORMAL" else (0, 200, 0)
-    cv2.putText(frame, label, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1.0, color, 2, cv2.LINE_AA)
+    height = frame.shape[0]
+    scale = max(0.6, height / 720)
+    thickness = max(2, int(round(scale * 2)))
+
+    (text_w, text_h), baseline = cv2.getTextSize(
+        label, cv2.FONT_HERSHEY_SIMPLEX, scale, thickness
+    )
+    pad = int(round(8 * scale))
+    cv2.rectangle(
+        frame,
+        (pad, pad),
+        (pad * 3 + text_w, pad * 3 + text_h + baseline),
+        (0, 0, 0),
+        thickness=-1,
+    )
+    cv2.putText(
+        frame,
+        label,
+        (pad * 2, pad * 2 + text_h),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        scale,
+        color,
+        thickness,
+        cv2.LINE_AA,
+    )
 
 
 def _show_and_check_quit(frame: np.ndarray) -> bool:

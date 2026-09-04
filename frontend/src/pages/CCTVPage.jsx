@@ -1,52 +1,30 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import '../styles/CCTVPage.css';
 import logo from '../assets/png/APAP로고.png';
+import { getAiServerUrl } from '../config/env';
 
 function CCTVPage() {
-  const videoRef = useRef(null);
+  const imgRef = useRef(null);
   const navigate = useNavigate();
+  const [status, setStatus] = useState('connecting');
+  // 브라우저 캐시로 이전 스트림이 재사용되지 않도록 진입할 때마다 새 URL을 만든다.
+  const [streamKey] = useState(() => Date.now());
 
-  useEffect(() => {
-    let stream;
-    const videoElement = videoRef.current;
+  const streamUrl = `${getAiServerUrl()}/stream/live?t=${streamKey}`;
 
-    const startCamera = async () => {
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: true,
-          audio: false,
-        });
+  const stopStream = () => {
+    // <img>는 src를 비워야 서버와의 MJPEG 연결이 끊긴다.
+    if (imgRef.current) {
+      imgRef.current.src = '';
+    }
+  };
 
-        if (videoElement) {
-          videoElement.srcObject = stream;
-        }
-      } catch (error) {
-        console.error('카메라 접근 실패:', error);
-      }
-    };
-
-    startCamera();
-
-    return () => {
-      if (stream) {
-        stream.getTracks().forEach((track) => track.stop());
-
-        if (videoElement) {
-          videoElement.srcObject = null;
-        }
-      }
-    };
-  }, []);
+  useEffect(() => stopStream, []);
 
   const handleBack = () => {
-    if (videoRef.current?.srcObject) {
-      videoRef.current.srcObject.getTracks().forEach((track) => track.stop());
-
-      videoRef.current.srcObject = null;
-    }
-
+    stopStream();
     navigate('/main');
   };
 
@@ -61,13 +39,26 @@ function CCTVPage() {
       </div>
 
       <div className="camera-wrapper">
-        <video
-          ref={videoRef}
-          autoPlay
-          playsInline
-          muted
+        <img
+          ref={imgRef}
+          src={streamUrl}
+          alt="실시간 카메라"
           className="camera-video"
+          onLoad={() => setStatus('live')}
+          onError={() => setStatus('error')}
         />
+
+        {status === 'connecting' && (
+          <p className="camera-message">카메라에 연결하는 중입니다...</p>
+        )}
+
+        {status === 'error' && (
+          <p className="camera-message camera-message--error">
+            카메라 스트림에 연결할 수 없습니다.
+            <br />
+            AI 서버가 실행 중인지, RTSP_URL이 설정되어 있는지 확인해 주세요.
+          </p>
+        )}
       </div>
     </div>
   );
