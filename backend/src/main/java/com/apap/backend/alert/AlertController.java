@@ -4,13 +4,18 @@ import com.apap.backend.auth.AuthUser;
 import com.apap.backend.common.ApiResponse;
 import com.apap.backend.user.User;
 import com.apap.backend.user.UserRepository;
+import com.apap.backend.video.VideoSource;
+import com.apap.backend.video.VideoSourceRepository;
 import jakarta.persistence.EntityNotFoundException;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -23,10 +28,16 @@ public class AlertController {
 
     private final AlertRepository alertRepository;
     private final UserRepository userRepository;
+    private final VideoSourceRepository videoSourceRepository;
 
-    public AlertController(AlertRepository alertRepository, UserRepository userRepository) {
+    public AlertController(
+            AlertRepository alertRepository,
+            UserRepository userRepository,
+            VideoSourceRepository videoSourceRepository
+    ) {
         this.alertRepository = alertRepository;
         this.userRepository = userRepository;
+        this.videoSourceRepository = videoSourceRepository;
     }
 
     @GetMapping
@@ -70,6 +81,23 @@ public class AlertController {
                 .orElseThrow(() -> new EntityNotFoundException("사용자를 찾을 수 없습니다."));
         Alert alert = alertRepository.save(new Alert(receiver, "테스트 알림입니다."));
         return ApiResponse.ok(AlertResponse.from(alert), "테스트 알림이 발송되었습니다.");
+    }
+
+    /**
+     * 실시간 감지 알림: AI 서버가 카메라별로 알림 여부를 이미 판단(5연속 감지 +
+     * 짧은 재발동 쿨다운)한 뒤 호출하므로, 여기서는 중복 억제 없이 그대로 저장한다.
+     * 인증 사용자가 없는 서버 간 호출이라 videoSourceId로 수신자(카메라 소유자)를 정한다.
+     */
+    @PostMapping("/live")
+    public ApiResponse<AlertResponse> live(@Valid @RequestBody LiveAlertRequest request) {
+        VideoSource videoSource = videoSourceRepository.findById(request.videoSourceId())
+                .orElseThrow(() -> new EntityNotFoundException("영상 소스를 찾을 수 없습니다."));
+        String message = request.message() != null ? request.message() : "비정상 행동이 감지되었습니다.";
+        Alert alert = alertRepository.save(new Alert(videoSource.getUser(), message));
+        return ApiResponse.ok(AlertResponse.from(alert), "실시간 알림이 생성되었습니다.");
+    }
+
+    public record LiveAlertRequest(@NotNull Long videoSourceId, String message) {
     }
 
     /** 리셋 결과: 화면에서 숨긴 건수 (DB 행은 삭제되지 않음) */

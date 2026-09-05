@@ -48,6 +48,8 @@ public class SecurityConfig {
                         .requestMatchers("/", "/google-login.html", "/favicon.ico").permitAll()
                         // 엣지 디바이스 콜백 (현재 공개, 추후 API Key 보호 권장)
                         .requestMatchers(HttpMethod.POST, "/api/analysis/callback").permitAll()
+                        // AI 서버가 실시간 감지 알림을 보내는 경로 (현재 공개, 추후 API Key 보호 권장)
+                        .requestMatchers(HttpMethod.POST, "/api/alerts/live").permitAll()
                         // Swagger
                         .requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**").permitAll()
                         // 쓰기 작업: MANAGER 이상

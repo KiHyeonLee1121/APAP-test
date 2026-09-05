@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import json
+import logging
 import os
-from typing import Iterator
+import urllib.error
+import urllib.request
+from typing import Iterator, Optional
 
 import cv2
 from fastapi import FastAPI, HTTPException
@@ -19,6 +23,8 @@ app = FastAPI(
     description="Central-server MVP inference API for APAP.",
     version="0.1.0",
 )
+
+logger = logging.getLogger(__name__)
 
 # The web frontend loads the live stream directly from this server, so browser
 # requests need to be allowed. This server holds no user data and sits behind
@@ -58,13 +64,39 @@ def health() -> HealthResponse:
     return HealthResponse()
 
 
-def _mjpeg_frames(rtsp_url: str, model_path: str) -> Iterator[bytes]:
+def _notify_backend_alert(video_source_id: int) -> None:
+    """Tell the backend a real abnormal event just happened, so it shows up in
+    the alert history page. Best-effort: a network hiccup here must not break
+    the live stream, so failures are logged and swallowed.
+    """
+    backend_url = os.environ.get("BACKEND_URL")
+    if not backend_url:
+        return
+    body = json.dumps({"videoSourceId": video_source_id}).encode("utf-8")
+    request = urllib.request.Request(
+        f"{backend_url.rstrip('/')}/api/alerts/live",
+        data=body,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        urllib.request.urlopen(request, timeout=3)
+    except (urllib.error.URLError, OSError) as exc:
+        logger.warning("백엔드 알림 전송 실패: %s", exc)
+
+
+def _mjpeg_frames(
+    rtsp_url: str, model_path: str, video_source_id: Optional[int]
+) -> Iterator[bytes]:
     """Annotated live frames as an MJPEG multipart stream.
 
     Reuses iter_live_results (the same generator the CLI demo consumes), so the
     browser view and the console output always show the same verdict.
     """
     for result in iter_live_results(rtsp_url=rtsp_url, model_path=model_path):
+        if result.should_notify and video_source_id is not None:
+            _notify_backend_alert(video_source_id)
+
         # Scale first, then annotate, so the overlay is sized for what the
         # browser actually receives.
         frame = _downscale_for_stream(result.frame)
@@ -83,13 +115,17 @@ def _mjpeg_frames(rtsp_url: str, model_path: str) -> Iterator[bytes]:
 
 
 @app.get("/stream/live")
-def stream_live() -> StreamingResponse:
+def stream_live(video_source_id: Optional[int] = None) -> StreamingResponse:
     """Live camera view with NORMAL/ABNORMAL overlay, as MJPEG.
 
     Browsers can't play RTSP directly, so the server decodes the camera stream,
     runs anomaly detection, and re-serves annotated frames that an <img> tag can
     display. The camera URL comes from the RTSP_URL environment variable so
     credentials never appear in the page or in request logs.
+
+    video_source_id identifies the backend VideoSource for this camera, so a
+    genuine detected event (should_notify) can be reported to
+    POST /api/alerts/live. Omit it to just view the stream with no alerts.
     """
     rtsp_url = os.environ.get("RTSP_URL")
     if not rtsp_url:
@@ -99,7 +135,7 @@ def stream_live() -> StreamingResponse:
         )
 
     return StreamingResponse(
-        _mjpeg_frames(rtsp_url, str(AUTOENCODER_PATH)),
+        _mjpeg_frames(rtsp_url, str(AUTOENCODER_PATH), video_source_id),
         media_type=f"multipart/x-mixed-replace; boundary={MJPEG_BOUNDARY}",
     )
 

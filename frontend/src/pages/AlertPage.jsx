@@ -12,6 +12,18 @@ const ALERT_STATUS_LABELS = {
   READ: '읽음',
 };
 
+const formatAlertTime = (sentAt) => {
+  if (!sentAt) return '';
+  const date = new Date(sentAt);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleString('ko-KR', {
+    month: 'long',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+};
+
 function AlertPage() {
   const navigate = useNavigate();
 
@@ -24,25 +36,36 @@ function AlertPage() {
   useEffect(() => {
     let isCancelled = false;
 
-    fetchAlerts()
-      .then((loadedAlerts) => {
-        if (!isCancelled) {
-          setAlerts(loadedAlerts);
-        }
-      })
-      .catch((error) => {
-        if (!isCancelled) {
-          setErrorMessage(error.message || '알림 내역을 불러오지 못했습니다.');
-        }
-      })
-      .finally(() => {
-        if (!isCancelled) {
-          setIsLoading(false);
-        }
-      });
+    const loadAlerts = (isInitialLoad) =>
+      fetchAlerts()
+        .then((loadedAlerts) => {
+          if (!isCancelled) {
+            setAlerts(loadedAlerts);
+            if (isInitialLoad) {
+              setErrorMessage('');
+            }
+          }
+        })
+        .catch((error) => {
+          // 실시간 감지 중 폴링 한 번 실패했다고 화면을 에러로 덮지 않는다 —
+          // 초기 로딩 실패일 때만 에러 상태를 보여준다.
+          if (!isCancelled && isInitialLoad) {
+            setErrorMessage(error.message || '알림 내역을 불러오지 못했습니다.');
+          }
+        })
+        .finally(() => {
+          if (!isCancelled && isInitialLoad) {
+            setIsLoading(false);
+          }
+        });
+
+    loadAlerts(true);
+    // 실시간 감지로 새 알림이 오면 새로고침 없이 보이도록 주기적으로 다시 불러온다.
+    const intervalId = setInterval(() => loadAlerts(false), 5000);
 
     return () => {
       isCancelled = true;
+      clearInterval(intervalId);
     };
   }, []);
 
@@ -156,7 +179,10 @@ function AlertPage() {
                 } ${alert.status === 'READ' ? 'is-read' : ''}`}
                 onClick={() => toggleSelect(alert.id)}
               >
-                <span className="alert-message">{alert.message}</span>
+                <div className="alert-content">
+                  <span className="alert-message">{alert.message}</span>
+                  <span className="alert-time">{formatAlertTime(alert.sentAt)}</span>
+                </div>
                 <span className="alert-status">
                   {ALERT_STATUS_LABELS[alert.status] || alert.status}
                 </span>

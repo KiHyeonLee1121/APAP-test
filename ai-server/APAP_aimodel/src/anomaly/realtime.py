@@ -42,6 +42,68 @@ from .train import AUTOENCODER_PATH
 # of the anomaly logic itself.
 DEFAULT_FALLBACK_FPS = 15.0
 
+# Alert-worthiness policy for live detection (separate from the per-window
+# NORMAL/ABNORMAL label used for the on-screen overlay, which reacts
+# immediately). A single stray ABNORMAL window is often training-data noise
+# (e.g. mid-transition poses like sitting down/standing up); requiring several
+# in a row before treating it as a real event filters that out. Once an event
+# has been flagged, later windows in the same event don't re-flag — only a
+# genuinely new event (state returns to NORMAL first) can trigger again.
+CONSECUTIVE_ABNORMAL_THRESHOLD = 5
+
+# Anti-flicker guard, separate from the above: a single NORMAL window in the
+# middle of a real, ongoing event (e.g. one noisy frame) resets the streak
+# counter, so the very next few ABNORMAL windows would otherwise look like a
+# "new" event and re-flag within a couple seconds — same incident, double
+# alert. Suppress re-flagging within this many seconds of the last flag; a
+# genuinely separate later event will still clear it easily.
+REFLAG_COOLDOWN_SECONDS = 12.0
+
+
+@dataclass
+class AlertState:
+    """Mutable state the alert-worthiness policy carries across windows."""
+
+    consecutive_abnormal: int = 0
+    event_flagged: bool = False
+    last_flagged_at: float | None = None
+
+
+def update_alert_state(
+    is_anomaly: bool,
+    state: AlertState,
+    now: float,
+    consecutive_threshold: int = CONSECUTIVE_ABNORMAL_THRESHOLD,
+    reflag_cooldown_seconds: float = REFLAG_COOLDOWN_SECONDS,
+) -> bool:
+    """Advance the alert state machine by one window judgment; return should_notify.
+
+    Pure state transition (no I/O), so the policy — "N consecutive ABNORMAL
+    windows fire once per event, a same-event noise blip doesn't split it into
+    two events" — is unit-testable without a real camera/model. See
+    CONSECUTIVE_ABNORMAL_THRESHOLD / REFLAG_COOLDOWN_SECONDS for the reasoning.
+    """
+    if is_anomaly:
+        state.consecutive_abnormal += 1
+    else:
+        state.consecutive_abnormal = 0
+        state.event_flagged = False
+        return False
+
+    if state.consecutive_abnormal < consecutive_threshold or state.event_flagged:
+        return False
+
+    should_notify = (
+        state.last_flagged_at is None
+        or (now - state.last_flagged_at) >= reflag_cooldown_seconds
+    )
+    if should_notify:
+        state.last_flagged_at = now
+    # Either way, this event is considered "handled" so later windows in the
+    # same run don't keep re-checking/re-firing.
+    state.event_flagged = True
+    return should_notify
+
 
 def _require_realtime_dependencies() -> None:
     missing = []
@@ -104,6 +166,12 @@ class LiveFrameResult:
     threshold: float
     error: float | None = None
     is_anomaly: bool = False
+    # True at most once per real event: consecutive ABNORMAL windows just
+    # crossed CONSECUTIVE_ABNORMAL_THRESHOLD and this isn't a re-flag of an
+    # event already flagged within REFLAG_COOLDOWN_SECONDS. This is what a
+    # future backend integration should treat as "create an alert" — the
+    # NORMAL/ABNORMAL label above changes far more often and isn't debounced.
+    should_notify: bool = False
 
 
 def iter_live_results(
@@ -159,6 +227,9 @@ def iter_live_results(
     start_time = time.monotonic()
     last_label = "warming_up"
 
+    # Alert-worthiness state (see CONSECUTIVE_ABNORMAL_THRESHOLD / REFLAG_COOLDOWN_SECONDS).
+    alert_state = AlertState()
+
     try:
         while True:
             if duration_seconds is not None and (time.monotonic() - start_time) >= duration_seconds:
@@ -199,12 +270,15 @@ def iter_live_results(
                 error = float(np.max(errors))
                 is_anomaly = error > threshold
                 last_label = "ABNORMAL" if is_anomaly else "NORMAL"
+                should_notify = update_alert_state(is_anomaly, alert_state, time.monotonic())
+
                 yield LiveFrameResult(
                     frame=frame,
                     label=last_label,
                     threshold=threshold,
                     error=error,
                     is_anomaly=is_anomaly,
+                    should_notify=should_notify,
                 )
                 continue
 
@@ -250,6 +324,9 @@ def run_realtime_rtsp_inference(
                         f"[normal]   오차: {result.error:.4f} <= threshold "
                         f"{result.threshold:.4f}, 시각: {timestamp}"
                     )
+
+                if result.should_notify:
+                    print(f"🔔 알림 발생 조건 충족 (연속 {CONSECUTIVE_ABNORMAL_THRESHOLD}회 이상 감지), 시각: {timestamp}")
 
             if display:
                 draw_overlay(result.frame, result.label)
