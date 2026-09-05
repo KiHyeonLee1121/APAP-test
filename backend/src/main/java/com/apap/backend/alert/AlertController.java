@@ -20,6 +20,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDateTime;
@@ -48,13 +49,31 @@ public class AlertController {
         this.userCaseRepository = userCaseRepository;
     }
 
+    /**
+     * 내 알림 목록. sinceId를 주면 그 id보다 새로 생긴 알림만 돌려준다.
+     * 실시간 화면에서 새 알림만 받아 소리를 울릴 때 쓴다(생략하면 기존처럼 전체 목록).
+     */
     @GetMapping
-    public ApiResponse<List<AlertResponse>> list(@AuthenticationPrincipal AuthUser authUser) {
-        List<AlertResponse> alerts = alertRepository.findAllByReceiverIdOrderByIdDesc(authUser.id())
-                .stream()
-                .map(AlertResponse::from)
-                .toList();
-        return ApiResponse.ok(alerts);
+    public ApiResponse<List<AlertResponse>> list(@AuthenticationPrincipal AuthUser authUser,
+                                                 @RequestParam(required = false) Long sinceId) {
+        List<Alert> alerts = sinceId == null
+                ? alertRepository.findAllByReceiverIdOrderByIdDesc(authUser.id())
+                : alertRepository.findAllByReceiverIdAndIdGreaterThanOrderByIdDesc(authUser.id(), sinceId);
+        return ApiResponse.ok(alerts.stream().map(AlertResponse::from).toList());
+    }
+
+    /**
+     * 새 알림 도착 확인용 경량 조회. 실시간 화면이 짧은 주기로 폴링해
+     * latestAlertId가 바뀌면 소리를 울리는 식으로 쓴다.
+     * 목록 전체를 내려받지 않으므로 자주 호출해도 부담이 적다.
+     */
+    @GetMapping("/unread-count")
+    public ApiResponse<UnreadCountResponse> unreadCount(@AuthenticationPrincipal AuthUser authUser) {
+        long unread = alertRepository.countByReceiverIdAndStatusNot(authUser.id(), AlertStatus.READ);
+        Long latestAlertId = alertRepository.findFirstByReceiverIdOrderByIdDesc(authUser.id())
+                .map(Alert::getId)
+                .orElse(null);
+        return ApiResponse.ok(new UnreadCountResponse(unread, latestAlertId));
     }
 
     @PatchMapping("/{alertId}/read")
@@ -132,6 +151,13 @@ public class AlertController {
 
     /** 리셋 결과: 화면에서 숨긴 건수 (DB 행은 삭제되지 않음) */
     public record ResetResponse(int hiddenCount) {
+    }
+
+    /**
+     * 실시간 화면 폴링용 응답.
+     * latestAlertId가 직전 값과 달라졌으면 새 알림이 도착한 것이다(알림이 없으면 null).
+     */
+    public record UnreadCountResponse(long unreadCount, Long latestAlertId) {
     }
 
     public record AlertResponse(

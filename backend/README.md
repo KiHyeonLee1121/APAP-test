@@ -204,6 +204,25 @@ CCTV 실시간 화면에서 비정상이 감지되면 알림 내역에 바로 �
 
 > 공개 경로라 현재는 누구나 호출할 수 있습니다. `POST /api/analysis/callback`과 함께 API Key 보호가 후속 과제입니다.
 
+### 실시간 화면에서 알림 울리기 (프론트용)
+
+감지 즉시 소리를 내려면 아래 두 API를 씁니다. 매번 알림 목록 전체를 받아올 필요가 없습니다.
+
+| API | 용도 |
+|---|---|
+| `GET /api/alerts/unread-count` | `{unreadCount, latestAlertId}`. 2~3초마다 호출해 `latestAlertId`가 바뀌면 새 알림 도착 |
+| `GET /api/alerts?sinceId=N` | N 이후 새로 생긴 알림만. 팝업에 띄울 내용을 받을 때 |
+
+```text
+화면 진입 → unread-count로 latestAlertId 저장
+2~3초마다 → unread-count 호출
+            latestAlertId가 달라졌으면 소리 재생
+            필요하면 /api/alerts?sinceId=저장값 으로 새 알림 내용 조회
+            저장값 갱신
+```
+
+`unreadCount`는 배지 숫자로 바로 쓸 수 있고, 알림이 하나도 없으면 `latestAlertId`는 `null`입니다.
+
 ## 저장된 영상 / 알림 리셋
 
 사용자가 화면을 비울 수 있는 리셋 기능입니다. **데이터를 지우지 않고 화면에서만 감춥니다.**

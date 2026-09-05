@@ -249,7 +249,8 @@ AlertResponse:
 
 | Method | Path | 권한 | 설명 |
 |---|---|---|---|
-| GET | `/api/alerts` | 인증 | 내 알림 목록 |
+| GET | `/api/alerts` | 인증 | 내 알림 목록. `?sinceId=N`이면 **N보다 새로 생긴 알림만** |
+| GET | `/api/alerts/unread-count` | 인증 | 새 알림 확인용 경량 조회. 응답 `{unreadCount, latestAlertId}` |
 | PATCH | `/api/alerts/{alertId}/read` | MANAGER+(수신자) | 읽음 처리 |
 | POST | `/api/alerts/test` | MANAGER+ | 본인에게 테스트 알림 1건 생성 |
 | POST | `/api/alerts/reset` | MANAGER+ | **알림 전체 리셋** — 목록에서 숨김. 응답 `{hiddenCount}` |
@@ -276,6 +277,22 @@ AI 서버가 실시간 스트림에서 비정상을 감지했을 때 호출한�
 **중복 억제 없음**: AI 서버가 5연속 감지 + 재발동 쿨다운으로 이미 걸러서 호출하므로, 백엔드는 받은 대로 저장한다.
 
 > ⚠️ 현재 공개 경로라 누구나 호출해 알림을 만들 수 있다. `POST /api/analysis/callback`과 함께 **API Key 보호가 후속 과제**다.
+
+### 실시간 화면에서 알림 울리기 (프론트 연동)
+
+CCTV 실시간 화면에서 감지 즉시 소리·팝업을 띄우려면 아래 두 API를 쓴다. 목록 전체를 계속 받아오지 않아도 된다.
+
+```text
+1) 화면 진입 시   GET /api/alerts/unread-count → latestAlertId 저장
+2) 2~3초마다     GET /api/alerts/unread-count
+                 latestAlertId가 저장값과 다르면 → 새 알림 도착! 소리 재생
+3) 내용이 필요하면 GET /api/alerts?sinceId={저장값} → 새로 생긴 알림만 받아 팝업 표시
+4) 저장값을 새 latestAlertId로 갱신
+```
+
+- `unreadCount`: 읽지 않은 알림 수 (배지 숫자용)
+- `latestAlertId`: 가장 최근 알림 id. **알림이 하나도 없으면 응답에 없음(null)**
+- 리셋(`POST /api/alerts/reset`)으로 숨긴 알림은 두 API 모두에서 제외된다
 
 **리셋 동작 (POST /api/alerts/reset)**
 - 읽음/안읽음 구분 없이 내 알림 전부를 화면에서 감춘다. **DB 행은 지우지 않는다**(`deleted=true`로 표시만).
