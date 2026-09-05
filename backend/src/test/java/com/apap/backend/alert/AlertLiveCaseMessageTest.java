@@ -17,6 +17,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -40,6 +41,8 @@ class AlertLiveCaseMessageTest {
     DetectionCaseRepository detectionCaseRepository;
     @Autowired
     UserCaseRepository userCaseRepository;
+    @Autowired
+    AlertRepository alertRepository;
 
     private VideoSource saveCamera(String email) {
         User user = new User(email, "이름", "sub-" + email, "pic");
@@ -91,5 +94,25 @@ class AlertLiveCaseMessageTest {
                         .content("{\"videoSourceId\":" + camera.getId() + "}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.message").value("비정상 행동이 감지되었습니다."));
+    }
+
+    @Test
+    void 업로드영상으로는_알림이_생성되지_않는다() throws Exception {
+        // 알림 내역에는 실시간 영상의 감지만 남아야 한다.
+        User user = new User("live-upload@example.com", "이름", "sub-live-upload", "pic");
+        user.changeRole(UserRole.MANAGER);
+        userRepository.save(user);
+        VideoSource uploaded = videoSourceRepository.save(
+                new VideoSource(user, VideoSourceType.UPLOAD, "업로드영상", "uploads/videos/a.mp4"));
+
+        long before = alertRepository.count();
+
+        mockMvc.perform(post("/api/alerts/live")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"videoSourceId\":" + uploaded.getId() + "}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("BAD_REQUEST"));
+
+        assertThat(alertRepository.count()).isEqualTo(before);
     }
 }

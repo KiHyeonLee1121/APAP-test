@@ -7,6 +7,7 @@ import com.apap.backend.user.User;
 import com.apap.backend.user.UserRepository;
 import com.apap.backend.video.VideoSource;
 import com.apap.backend.video.VideoSourceRepository;
+import com.apap.backend.video.VideoSourceType;
 import jakarta.persistence.EntityNotFoundException;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
@@ -99,6 +100,13 @@ public class AlertController {
     public ApiResponse<AlertResponse> live(@Valid @RequestBody LiveAlertRequest request) {
         VideoSource videoSource = videoSourceRepository.findById(request.videoSourceId())
                 .orElseThrow(() -> new EntityNotFoundException("영상 소스를 찾을 수 없습니다."));
+
+        // 알림 내역에는 실시간 영상(CCTV/엣지)의 감지만 남긴다.
+        // 업로드 영상의 배치 분석은 알림을 만들지 않으므로 여기서도 막는다.
+        if (videoSource.getType() == VideoSourceType.UPLOAD) {
+            throw new IllegalArgumentException(
+                    "실시간 영상(CCTV/EDGE_GATEWAY)만 알림을 생성할 수 있습니다. 업로드 영상은 분석 결과로만 조회하세요.");
+        }
         Alert alert = alertRepository.save(
                 new Alert(videoSource.getUser(), resolveMessage(request, videoSource.getUser().getId())));
         return ApiResponse.ok(AlertResponse.from(alert), "실시간 알림이 생성되었습니다.");

@@ -266,6 +266,8 @@ AI 서버가 실시간 스트림에서 비정상을 감지했을 때 호출한�
 - `videoSourceId`: **필수**. 존재하지 않으면 `404 NOT_FOUND`
 - `message`: 선택
 
+> **알림 내역에는 실시간 영상의 감지만 들어간다.** `videoSourceId`가 `UPLOAD` 타입이면 `400 BAD_REQUEST`로 거절한다. 업로드 영상의 배치 분석 결과는 알림이 아니라 `GET /api/events`(감지 이벤트)로 확인한다.
+
 **알림 문구 결정 순서**
 1. 요청에 `message`가 있으면 그대로 사용
 2. 없으면 **수신자가 구독한 활성 케이스의 `out_msg`** 사용 (7월 회의: `in user_id, case_id → out msg`. 여러 개면 가장 먼저 등록한 것)
