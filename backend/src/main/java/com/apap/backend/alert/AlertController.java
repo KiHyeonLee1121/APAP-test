@@ -1,6 +1,7 @@
 package com.apap.backend.alert;
 
 import com.apap.backend.auth.AuthUser;
+import com.apap.backend.cases.UserCaseRepository;
 import com.apap.backend.common.ApiResponse;
 import com.apap.backend.user.User;
 import com.apap.backend.user.UserRepository;
@@ -11,6 +12,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -26,18 +28,23 @@ import java.util.List;
 @RequestMapping("/api/alerts")
 public class AlertController {
 
+    private static final String DEFAULT_LIVE_ALERT_MESSAGE = "비정상 행동이 감지되었습니다.";
+
     private final AlertRepository alertRepository;
     private final UserRepository userRepository;
     private final VideoSourceRepository videoSourceRepository;
+    private final UserCaseRepository userCaseRepository;
 
     public AlertController(
             AlertRepository alertRepository,
             UserRepository userRepository,
-            VideoSourceRepository videoSourceRepository
+            VideoSourceRepository videoSourceRepository,
+            UserCaseRepository userCaseRepository
     ) {
         this.alertRepository = alertRepository;
         this.userRepository = userRepository;
         this.videoSourceRepository = videoSourceRepository;
+        this.userCaseRepository = userCaseRepository;
     }
 
     @GetMapping
@@ -92,9 +99,24 @@ public class AlertController {
     public ApiResponse<AlertResponse> live(@Valid @RequestBody LiveAlertRequest request) {
         VideoSource videoSource = videoSourceRepository.findById(request.videoSourceId())
                 .orElseThrow(() -> new EntityNotFoundException("영상 소스를 찾을 수 없습니다."));
-        String message = request.message() != null ? request.message() : "비정상 행동이 감지되었습니다.";
-        Alert alert = alertRepository.save(new Alert(videoSource.getUser(), message));
+        Alert alert = alertRepository.save(
+                new Alert(videoSource.getUser(), resolveMessage(request, videoSource.getUser().getId())));
         return ApiResponse.ok(AlertResponse.from(alert), "실시간 알림이 생성되었습니다.");
+    }
+
+    /**
+     * 알림 문구 결정 순서 (7월 회의: in user_id, case_id → out msg)
+     * 1) AI 서버가 보낸 message가 있으면 그대로 사용
+     * 2) 없으면 수신자가 구독한 활성 케이스의 out_msg 사용(여러 개면 가장 먼저 등록한 것)
+     * 3) 그것도 없으면 기본 문구
+     */
+    private String resolveMessage(LiveAlertRequest request, Long receiverId) {
+        if (StringUtils.hasText(request.message())) {
+            return request.message();
+        }
+        return userCaseRepository.findFirstByUserIdAndActiveIsTrueOrderByIdAsc(receiverId)
+                .map(userCase -> userCase.getDetectionCase().getOutMsg())
+                .orElse(DEFAULT_LIVE_ALERT_MESSAGE);
     }
 
     public record LiveAlertRequest(@NotNull Long videoSourceId, String message) {

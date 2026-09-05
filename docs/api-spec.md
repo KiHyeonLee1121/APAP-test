@@ -34,7 +34,7 @@
 
 - 로그인: 구글 OIDC ID 토큰을 검증한 뒤 **자체 JWT(HS256)** 를 발급한다.
 - 보호된 API 호출 시 헤더: `Authorization: Bearer <accessToken>`
-- 공개 경로(토큰 불필요): `GET /api/health`, `POST /api/auth/google`, `POST /api/analysis/callback`, Swagger(`/swagger-ui/**`, `/v3/api-docs/**`), 정적 페이지(`/`, `/google-login.html`)
+- 공개 경로(토큰 불필요): `GET /api/health`, `POST /api/auth/google`, `POST /api/analysis/callback`, `POST /api/alerts/live`(AI 서버 전용), Swagger(`/swagger-ui/**`, `/v3/api-docs/**`), 정적 페이지(`/`, `/google-login.html`)
 - 역할: `ADMIN`, `MANAGER`, `VIEWER` (신규 가입 기본값 `MANAGER`)
 
 | 작업 | 필요 권한 |
@@ -253,6 +253,27 @@ AlertResponse:
 | PATCH | `/api/alerts/{alertId}/read` | MANAGER+(수신자) | 읽음 처리 |
 | POST | `/api/alerts/test` | MANAGER+ | 본인에게 테스트 알림 1건 생성 |
 | POST | `/api/alerts/reset` | MANAGER+ | **알림 전체 리셋** — 목록에서 숨김. 응답 `{hiddenCount}` |
+| POST | `/api/alerts/live` | 공개(AI 서버용) | **실시간 감지 알림 생성**. body `{videoSourceId, message?}` |
+
+### POST /api/alerts/live — 실시간 감지 알림 (공개)
+
+AI 서버가 실시간 스트림에서 비정상을 감지했을 때 호출한다. 인증 사용자가 없는 서버 간 호출이라 공개 경로이며, `videoSourceId`로 수신자(카메라 소유자)를 정한다.
+
+요청:
+```json
+{ "videoSourceId": 123, "message": "비정상 행동이 감지되었습니다" }
+```
+- `videoSourceId`: **필수**. 존재하지 않으면 `404 NOT_FOUND`
+- `message`: 선택
+
+**알림 문구 결정 순서**
+1. 요청에 `message`가 있으면 그대로 사용
+2. 없으면 **수신자가 구독한 활성 케이스의 `out_msg`** 사용 (7월 회의: `in user_id, case_id → out msg`. 여러 개면 가장 먼저 등록한 것)
+3. 구독한 케이스도 없으면 기본 문구 `"비정상 행동이 감지되었습니다."`
+
+**중복 억제 없음**: AI 서버가 5연속 감지 + 재발동 쿨다운으로 이미 걸러서 호출하므로, 백엔드는 받은 대로 저장한다.
+
+> ⚠️ 현재 공개 경로라 누구나 호출해 알림을 만들 수 있다. `POST /api/analysis/callback`과 함께 **API Key 보호가 후속 과제**다.
 
 **리셋 동작 (POST /api/alerts/reset)**
 - 읽음/안읽음 구분 없이 내 알림 전부를 화면에서 감춘다. **DB 행은 지우지 않는다**(`deleted=true`로 표시만).
