@@ -25,7 +25,7 @@ function LoginPage() {
 
   useEffect(() => {
     if (!isInitializing && isAuthenticated) {
-      navigate('/main', { replace: true });
+      navigate('/cctv', { replace: true });
     }
   }, [isAuthenticated, isInitializing, navigate]);
 
@@ -36,7 +36,7 @@ function LoginPage() {
 
       try {
         await loginWithGoogle(credential);
-        navigate('/main', { replace: true });
+        navigate('/cctv', { replace: true });
       } catch (error) {
         setErrorMessage(error.message || 'Google 로그인에 실패했습니다.');
       } finally {

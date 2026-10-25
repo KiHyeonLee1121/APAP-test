@@ -20,13 +20,15 @@ function App() {
           <Route path="/terms" element={<TermsPage />} />
 
           <Route element={<ProtectedRoute />}>
-            <Route path="/main" element={<MainPage />} />
+            <Route element={<MainPage />}>
+            <Route path="/main" element={<Navigate to="/cctv" replace />} />
 
             <Route path="/cctv" element={<CCTVPage />} />
 
             <Route path="/saved-video" element={<SavedVideoPage />} />
 
             <Route path="/alert" element={<AlertPage />} />
+            </Route>
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />

@@ -1,8 +1,6 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 
 import '../styles/AlertPage.css';
-import logo from '../assets/png/APAP로고.png';
 import { fetchAlerts, markAlertAsRead } from '../services/alertApi';
 
 const ALERT_STATUS_LABELS = {
@@ -13,7 +11,6 @@ const ALERT_STATUS_LABELS = {
 };
 
 function AlertPage() {
-  const navigate = useNavigate();
 
   const [alerts, setAlerts] = useState([]);
   const [selectedAlerts, setSelectedAlerts] = useState([]);
@@ -111,14 +108,6 @@ function AlertPage() {
 
   return (
     <div className="alert-container">
-      <div className="top-bar">
-        <button className="back-button" onClick={() => navigate('/main')}>
-          ←
-        </button>
-
-        <img src={logo} alt="APAP" className="top-logo" />
-      </div>
-
       <div className="alert-wrapper">
         <div className="alert-header">
           <h1>알림 내역</h1>

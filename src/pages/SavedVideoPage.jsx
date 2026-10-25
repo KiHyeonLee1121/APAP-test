@@ -1,18 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 
 import '../styles/SavedVideoPage.css';
-import logo from '../assets/png/APAP로고.png';
+import { formatFileSize, getCachedVideoSize, cacheVideoSize } from '../utils/videoMetadata';
 import { useAuth } from '../hooks/useAuth';
 import {
   fetchVideoContent,
   fetchVideos,
   resetVideos,
+  requestVideoAnalysis,
   uploadVideoFile,
 } from '../services/videoApi';
 
 const VIDEO_STATUS_LABELS = {
   READY: '저장 완료',
+  ANALYZING: '분석 중',
+  ERROR: '분석 실패',
+  DISABLED: '비활성',
   PROCESSING: '분석 중',
   FAILED: '분석 실패',
 };
@@ -50,7 +53,6 @@ const formatCreatedAt = (value) => {
 };
 
 function SavedVideoPage() {
-  const navigate = useNavigate();
   const fileInputRef = useRef(null);
   const previewUrlRef = useRef('');
   const { user: currentUser } = useAuth();
@@ -68,6 +70,9 @@ function SavedVideoPage() {
   const [selectedVideoId, setSelectedVideoId] = useState(null);
   const [statusMessage, setStatusMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
+
+  const ownerKey = currentUser?.id ?? currentUser?.email ?? 'current';
+  const getVideoSize = (video) => video.fileSize ?? getCachedVideoSize(ownerKey, video.id);
 
   const authorName = currentUser?.name || currentUser?.email || '사용자';
 
@@ -139,6 +144,20 @@ function SavedVideoPage() {
 
   useEffect(() => () => revokePreviewUrl(), [revokePreviewUrl]);
 
+  useEffect(() => {
+    if (!videos.some((video) => ['ANALYZING', 'PROCESSING'].includes(video.status))) return;
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        const latest = await fetchVideos();
+        if (!cancelled) setVideos(latest);
+      } catch (error) {
+        if (!cancelled) setErrorMessage('분석 상태 갱신 실패: ' + error.message);
+      }
+    }, 3000);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [videos]);
+
   const resetUploadForm = ({ clearMessages = true } = {}) => {
     setSelectedFile(null);
     setVideoTitle('');
@@ -186,7 +205,7 @@ function SavedVideoPage() {
     }
 
     setSelectedFile(file);
-    setVideoTitle((currentTitle) => currentTitle || file.name);
+
     setErrorMessage('');
   };
 
@@ -198,12 +217,8 @@ function SavedVideoPage() {
       return;
     }
 
-    const trimmedTitle = videoTitle.trim();
-
-    if (!trimmedTitle) {
-      setErrorMessage('제목을 입력해주세요.');
-      return;
-    }
+    if (isUploading) return;
+    const trimmedTitle = videoTitle.trim() || selectedFile.name;
 
     setIsUploading(true);
     setErrorMessage('');
@@ -215,9 +230,11 @@ function SavedVideoPage() {
       });
 
       if (uploadedVideo) {
+        cacheVideoSize(ownerKey, uploadedVideo.id, selectedFile.size);
         setVideos((currentVideos) => [
           {
             ...uploadedVideo,
+            fileSize: uploadedVideo.fileSize ?? selectedFile.size,
             author: uploadedVideo.author || authorName,
           },
           ...currentVideos.filter((video) => video.id !== uploadedVideo.id),
@@ -229,13 +246,30 @@ function SavedVideoPage() {
         title: trimmedTitle,
         author: authorName,
         createdAt: uploadedVideo?.createdAt,
+        fileSize: uploadedVideo?.fileSize ?? selectedFile.size,
         url: URL.createObjectURL(selectedFile),
       });
       setSelectedVideoId(uploadedVideo?.id ?? null);
       setIsSavedVideoPlaying(false);
-      setStatusMessage('영상이 저장되었습니다. 백엔드에서 자동 분석이 시작됩니다.');
+
       setIsUploadModalOpen(false);
       resetUploadForm({ clearMessages: false });
+      if (uploadedVideo?.analysisJobId) {
+        setStatusMessage('영상이 저장되었으며 분석이 시작되었습니다.');
+      } else if (uploadedVideo?.id) {
+        setStatusMessage('영상이 저장되었습니다. 분석을 요청하고 있습니다.');
+        try {
+          const job = await requestVideoAnalysis(uploadedVideo.id);
+          setStatusMessage(job?.status === 'DONE' ? '영상 저장 및 분석이 완료되었습니다.' :
+            job?.status === 'FAILED' ? '영상은 저장되었지만 분석에 실패했습니다.' : '분석 요청이 접수되었습니다.');
+          const latestVideos = await fetchVideos();
+          setVideos(latestVideos);
+        } catch (error) {
+          setErrorMessage('영상은 저장되었습니다. 분석 요청 또는 상태 확인 실패: ' + error.message);
+        }
+      } else {
+        setErrorMessage('저장 응답에 영상 정보가 없습니다. 목록을 새로고침해 확인해주세요.');
+      }
     } catch (error) {
       setErrorMessage(error.message || '동영상 저장에 실패했습니다.');
     } finally {
@@ -256,12 +290,15 @@ function SavedVideoPage() {
 
     try {
       const videoBlob = await fetchVideoContent(video.id);
+      cacheVideoSize(ownerKey, video.id, videoBlob.size);
+      setVideos((items) => items.map((item) => item.id === video.id ? { ...item, fileSize: videoBlob.size } : item));
 
       setPreview({
         type: 'saved',
         title: getVideoTitle(video),
         author: video.author || authorName,
         createdAt: video.createdAt || video.created_at,
+        fileSize: video.fileSize ?? videoBlob.size,
         url: URL.createObjectURL(videoBlob),
       });
     } catch (error) {
@@ -314,19 +351,11 @@ function SavedVideoPage() {
 
   return (
     <div className="saved-video-container">
-      <div className="top-bar">
-        <button className="back-button" onClick={() => navigate('/main')}>
-          ←
-        </button>
-
-        <img src={logo} alt="APAP" className="top-logo" />
-      </div>
-
       <div className="white-wrapper">
         <div className="saved-video-layout">
           <section className="video-preview-panel">
             <div className="saved-video-heading">
-              <h1>저장된 영상</h1>
+              <h1>영상분석</h1>
               <button
                 className="video-action-btn"
                 type="button"
@@ -362,11 +391,11 @@ function SavedVideoPage() {
                   <dd>{previewVideo.title}</dd>
                 </div>
                 <div>
-                  <dt>작성자</dt>
-                  <dd>{previewVideo.author}</dd>
+                  <dt>파일 크기</dt>
+                  <dd>{formatFileSize(previewVideo.fileSize)}</dd>
                 </div>
                 <div>
-                  <dt>작성 시간</dt>
+                  <dt>저장 날짜</dt>
                   <dd>{formatCreatedAt(previewVideo.createdAt)}</dd>
                 </div>
               </dl>
@@ -418,9 +447,9 @@ function SavedVideoPage() {
             ) : (
               <div className="saved-video-list">
                 <div className="saved-video-row saved-video-row-header">
-                  <span>제목</span>
-                  <span>작성자</span>
-                  <span>작성 시간</span>
+                  <span>저장 이름</span>
+                  <span>파일 크기</span>
+                  <span>저장 날짜</span>
                   <span>상태</span>
                 </div>
 
@@ -435,7 +464,7 @@ function SavedVideoPage() {
                     disabled={isLoadingPlayback}
                   >
                     <span>{getVideoTitle(video)}</span>
-                    <span>{video.author || authorName}</span>
+                    <span>{formatFileSize(getVideoSize(video))}</span>
                     <span>{formatCreatedAt(video.createdAt || video.created_at)}</span>
                     <span>{VIDEO_STATUS_LABELS[video.status] || video.status || '-'}</span>
                   </button>
@@ -450,14 +479,16 @@ function SavedVideoPage() {
         <div className="upload-modal-overlay">
           <form className="upload-modal" onSubmit={handleSaveVideo}>
             <h2>영상 추가</h2>
+            <p>이름을 비워두면 원본 파일명으로 저장합니다.</p>
 
             <label className="upload-field">
-              <span>제목</span>
+              <span>저장 이름 (선택)</span>
               <input
                 type="text"
                 value={videoTitle}
                 onChange={(event) => setVideoTitle(event.target.value)}
-                placeholder="영상 제목"
+                placeholder={selectedFile?.name || "비워두면 원본 파일명으로 저장됩니다"}
+                maxLength={120}
                 disabled={isUploading}
               />
             </label>
@@ -479,7 +510,7 @@ function SavedVideoPage() {
             </label>
 
             {selectedFile && (
-              <p className="selected-file-name">{selectedFile.name}</p>
+              <p className="selected-file-name">{selectedFile.name} · {formatFileSize(selectedFile.size)}</p>
             )}
 
             {errorMessage && (
@@ -493,7 +524,7 @@ function SavedVideoPage() {
                 취소
               </button>
               <button type="submit" disabled={isUploading}>
-                {isUploading ? '저장 중' : '저장하기'}
+                {isUploading ? '처리 중…' : '저장 후 분석'}
               </button>
             </div>
           </form>
