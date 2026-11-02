@@ -26,3 +26,109 @@ body,
   color: #4c7a70;
   font-size: 16px;
 }
+.app-layout {
+  width: 100%;
+  height: 100vh;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: #e4fff7;
+}
+.app-header {
+  flex: 0 0 64px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 20px;
+  position: relative;
+  z-index: 10;
+}
+.app-logo { width: 90px; max-height: 48px; object-fit: contain; }
+.app-menu { position: relative; }
+.app-menu summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 10px 16px;
+  border-radius: 10px;
+  background: white;
+  font-weight: 600;
+}
+.app-menu summary::-webkit-details-marker { display: none; }
+.app-menu-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  width: min(280px, calc(100vw - 40px));
+  max-height: calc(100dvh - 80px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  padding: 12px;
+  border: 1px solid #c9e4dc;
+  border-radius: 12px;
+  background: white;
+  box-shadow: 0 8px 30px #183c2826;
+}
+.welcome-text { padding: 12px; overflow-wrap: anywhere; font-size: 14px; }
+.app-menu-panel a, .app-menu-panel button {
+  display: block;
+  padding: 14px 12px;
+  border: 0;
+  border-radius: 8px;
+  color: inherit;
+  background: transparent;
+  text-align: left;
+  text-decoration: none;
+  font-size: 16px;
+  cursor: pointer;
+}
+.app-menu-panel a:hover, .app-menu-panel button:hover, .app-menu-panel a.active {
+  background: #e4fff7;
+}
+.app-content { flex: 1; min-height: 0; min-width: 0; }
+.app-content > .cctv-container,
+.app-content > .saved-video-container,
+.app-content > .alert-container {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.app-content .camera-wrapper,
+.app-content .white-wrapper,
+.app-content .alert-wrapper {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+  border-radius: 0;
+  box-shadow: none;
+}
+.app-content .camera-wrapper { padding: 0; background: #111; overflow: hidden; }
+.camera-video { display: block; }
+.app-content .white-wrapper { padding: clamp(12px, 2vw, 32px); }
+.alert-header { gap: 16px; flex-wrap: wrap; }
+.alert-header h1 { font-size: clamp(24px, 3vw, 42px); }
+.alert-item { height: auto; min-height: 58px; padding: 14px 20px; overflow-wrap: anywhere; }
+.withdraw-modal { max-width: calc(100vw - 32px); height: auto; min-height: 215px; padding: 24px; }
+.login-container { min-height: 100dvh; padding: 24px; }
+@media (max-width: 600px) {
+  .login-wrapper { width: 100%; flex-direction: column; gap: 40px; }
+  .google-section { max-width: 100%; }
+  .alert-wrapper { padding: 16px; }
+  .alert-item { font-size: 16px; }
+  .upload-analysis-box h1 { font-size: 24px; padding: 20px 12px; }
+}
+
+.app-content .white-wrapper { overflow: auto; }
+.app-content .saved-video-layout { min-height: 560px; }
+.app-content .saved-video-row { grid-template-columns: minmax(120px, 1fr) 85px 150px 85px; }
+.app-content .saved-video-list { overflow: auto; }
+.app-content .saved-video-row { min-width: 500px; }
+.app-content .saved-video-row-header span { display: block; }
+.app-content .preview-meta { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.app-content .preview-meta dd { white-space: normal; overflow-wrap: anywhere; }
+@media (max-width: 980px) {
+  .app-content .saved-video-layout { height: auto; min-height: 100%; grid-template-rows: minmax(420px, auto) minmax(300px, auto); }
+}

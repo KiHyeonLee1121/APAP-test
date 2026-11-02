@@ -1,14 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 
 import '../styles/CCTVPage.css';
-import logo from '../assets/png/APAP로고.png';
 import { getAiServerUrl } from '../config/env';
 import { fetchVideos } from '../services/videoApi';
 
 function CCTVPage() {
   const imgRef = useRef(null);
-  const navigate = useNavigate();
   const [status, setStatus] = useState('connecting');
   // 브라우저 캐시로 이전 스트림이 재사용되지 않도록 진입할 때마다 새 URL을 만든다.
   const [streamKey] = useState(() => Date.now());
@@ -49,21 +46,9 @@ function CCTVPage() {
 
   useEffect(() => stopStream, []);
 
-  const handleBack = () => {
-    stopStream();
-    navigate('/main');
-  };
 
   return (
     <div className="cctv-container">
-      <div className="top-bar">
-        <button className="back-button" onClick={handleBack}>
-          ←
-        </button>
-
-        <img src={logo} alt="APAP" className="top-logo" />
-      </div>
-
       <div className="camera-wrapper">
         {cameraLookup.done && (
           <img
