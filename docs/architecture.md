@@ -95,6 +95,23 @@ flowchart LR
 - 보조 흐름은 **콜백**(엣지/AI가 결과 배열을 직접 전송). FALL/INTRUSION 등 확장 타입 수용.
 - AI에 전달하는 `video_path`는 `VideoSource.sourceUrl` 값 그대로다. local 모드에선 파일 경로(동일 머신/공유 볼륨 필요), s3 모드에선 S3 객체 키(AI 서버가 버킷에서 직접 다운로드, AI 측도 S3 읽기 권한 필요).
 
+### 실시간 감지 알림 흐름
+
+업로드 영상의 배치 분석과 달리, 실시간 스트림은 **AI 서버가 알림 여부까지 판단해서 백엔드에 통보**한다.
+
+```text
+카메라(RTSP) → AI 서버 실시간 추론
+   → 5연속 감지 + 재발동 쿨다운으로 "지금 알릴지" 판정(should_notify)
+   → 알릴 때만 POST /api/alerts/live { videoSourceId, message? }
+백엔드 → videoSourceId로 카메라 소유자를 찾아 Alert 생성
+   → 프론트 알림 페이지가 폴링으로 표시
+```
+
+- **중복 억제는 AI 쪽 책임**이다. 매 프레임 알림이 쌓이지 않도록 AI가 이벤트당 한 번만 호출한다.
+- 문구는 요청의 `message` → 수신자의 활성 케이스 `out_msg` → 기본 문구 순으로 결정된다(7월 회의 결정을 실시간 경로에서 유지).
+- 배치 분석 경로(업로드/콜백)는 **알림을 만들지 않는다.** 영상을 저장할 때마다 알림이 쌓이는 문제 때문에 분리했다.
+- 공개 경로라 현재는 누구나 호출할 수 있다 → `analysis/callback`과 함께 API Key 보호가 후속 과제.
+
 ## 백엔드 내부 구조 (패키지)
 
 ```text
@@ -144,7 +161,7 @@ erDiagram
 
 ## 보안 / 공개 경로
 
-- 공개: `/api/health`, `/api/auth/google`, `POST /api/analysis/callback`, Swagger, 정적 페이지(`/`, `/google-login.html`).
+- 공개: `/api/health`, `/api/auth/google`, `POST /api/analysis/callback`, `POST /api/alerts/live`(AI 서버 전용), Swagger, 정적 페이지(`/`, `/google-login.html`).
 - 그 외 전부 인증 필요. 401=`UNAUTHORIZED`, 403=`FORBIDDEN` (통일 에러 포맷).
 - CORS 허용 origin: `http://localhost:3000`, `http://localhost:5173` (프론트 도메인 추가 시 `SecurityConfig` 수정).
 
