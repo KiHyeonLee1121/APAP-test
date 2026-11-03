@@ -18,10 +18,11 @@ public interface AnalysisJobRepository extends JpaRepository<AnalysisJob, Long> 
     @Query("select j from AnalysisJob j join fetch j.videoSource v join fetch v.user where j.id = :id")
     Optional<AnalysisJob> findWithVideoAndUserById(@Param("id") Long id);
 
-    /** 영상 리셋 시, 그 사용자의 영상에 딸린 분석 작업도 함께 숨긴다. */
+    /** 저장 영상 리셋 시, 업로드 영상에 딸린 분석 작업도 함께 숨긴다. (CCTV 소스 작업은 유지) */
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query(value = "UPDATE analysis_jobs SET deleted = true, updated_at = CURRENT_TIMESTAMP "
             + "WHERE deleted = false AND video_source_id IN "
-            + "(SELECT id FROM video_sources WHERE user_id = :userId)", nativeQuery = true)
-    int hideAllByUserId(@Param("userId") Long userId);
+            + "(SELECT id FROM video_sources WHERE user_id = :userId AND type = 'UPLOAD')",
+            nativeQuery = true)
+    int hideUploadedByUserId(@Param("userId") Long userId);
 }

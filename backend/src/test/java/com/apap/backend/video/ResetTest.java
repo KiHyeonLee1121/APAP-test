@@ -162,6 +162,31 @@ class ResetTest {
         assertThat(remaining.intValue()).isEqualTo(1);
     }
 
+    /**
+     * "저장된 영상 리셋"은 업로드 영상만 비워야 한다.
+     * CCTV 소스까지 숨기면 실시간 화면이 카메라를 못 찾아 video_source_id 없이 스트림에 붙고,
+     * AI 서버가 알림을 보내지 않아 실시간 감지 알림이 통째로 끊긴다.
+     */
+    @Test
+    void 영상리셋해도_CCTV_소스는_남는다() throws Exception {
+        User user = saveManager("reset-keeps-cctv@example.com");
+        seedData(user);
+        VideoSource camera = videoSourceRepository.save(
+                new VideoSource(user, VideoSourceType.CCTV, "정문 카메라", "rtsp://cam"));
+        sync();
+
+        mockMvc.perform(post("/api/videos/reset").header(HttpHeaders.AUTHORIZATION, bearer(user)))
+                .andExpect(status().isOk())
+                // 업로드 1건만 숨겨진다
+                .andExpect(jsonPath("$.data.hiddenCount").value(1));
+        sync();
+
+        mockMvc.perform(get("/api/videos").header(HttpHeaders.AUTHORIZATION, bearer(user)))
+                .andExpect(jsonPath("$.data.length()").value(1))
+                .andExpect(jsonPath("$.data[0].id").value(camera.getId()))
+                .andExpect(jsonPath("$.data[0].type").value("CCTV"));
+    }
+
     @Test
     void 영상리셋과_알림리셋은_서로_독립이다() throws Exception {
         User user = saveManager("reset-independent@example.com");
