@@ -240,16 +240,22 @@ AlertResponse:
 ```json
 {
   "id": 1, "detectionEventId": 10, "receiverId": 1,
+  "videoSourceId": 123, "videoSourceName": "정문 카메라",
   "channel": "DASHBOARD", "status": "SENT", "message": "...",
   "sentAt": "...", "readAt": null
 }
 ```
 - `status`: `PENDING` | `SENT` | `FAILED` | `READ`
 - `detectionEventId`는 테스트/시스템 알림의 경우 `null`
+- `videoSourceId` / `videoSourceName`: 어느 카메라에서 잡힌 감지인지. 화면 우상단 알림에 쓴다.
+  테스트/시스템 알림은 `null`. **알림 생성 시점의 스냅샷**이라 영상을 리셋해도 남는다
+  (연관관계로 걸면 숨겨진 영상 때문에 알림 목록 조회까지 깨져서 값으로 저장한다)
+- 심각도(`severity`)는 내려주지 않는다 — 실시간 알림은 감지 이벤트 없이 생성되어 항상 비어 있다
 
 | Method | Path | 권한 | 설명 |
 |---|---|---|---|
 | GET | `/api/alerts` | 인증 | 내 알림 목록. `?sinceId=N`이면 **N보다 새로 생긴 알림만** |
+| GET | `/api/alerts/stream` | 인증 | **실시간 알림 스트림(SSE)** — 감지 즉시 서버가 밀어 준다 |
 | GET | `/api/alerts/unread-count` | 인증 | 새 알림 확인용 경량 조회. 응답 `{unreadCount, latestAlertId}` |
 | PATCH | `/api/alerts/{alertId}/read` | MANAGER+(수신자) | 읽음 처리 |
 | POST | `/api/alerts/test` | MANAGER+ | 본인에게 테스트 알림 1건 생성 |
@@ -278,9 +284,35 @@ AI 서버가 실시간 스트림에서 비정상을 감지했을 때 호출한�
 
 > ⚠️ 현재 공개 경로라 누구나 호출해 알림을 만들 수 있다. `POST /api/analysis/callback`과 함께 **API Key 보호가 후속 과제**다.
 
+### GET /api/alerts/stream — 실시간 알림 스트림 (SSE)
+
+감지 **즉시** 화면 우상단에 알림을 띄우기 위한 경로. 화면이 이 연결을 열어 두면
+`POST /api/alerts/live`(또는 `/test`)로 알림이 생기는 순간 서버가 바로 내보낸다.
+폴링은 주기만큼 늦기 때문에 토스트 알림은 이 경로를 쓴다.
+
+```text
+event:connected
+data:{"connectedAt":"2026-11-03T17:03:01"}
+
+event:alert
+data:{"id":2,"receiverId":4,"videoSourceId":4,"videoSourceName":"후문 카메라",
+      "message":"비정상 행동이 감지되었습니다.","status":"SENT","sentAt":"..."}
+```
+
+- `alert` 이벤트의 `data`는 **AlertResponse와 같은 형태**다. 그대로 토스트에 꽂으면 된다.
+- 연결 직후 `connected` 이벤트가 한 번 오고, 25초마다 주석(`:keep-alive`)이 흘러 연결이 유지된다.
+- 연결 최대 30분. 만료되면 클라이언트가 재연결하면 된다. 한 사용자가 여러 탭을 열어도 모두 받는다.
+- 열린 연결이 없으면 알림은 저장만 되고, 화면은 다음 폴링에서 받는다. **스트림이 끊겨도 알림은 유실되지 않는다.**
+
+> ⚠️ **브라우저 기본 `EventSource`로는 연결되지 않는다.** `EventSource`는 `Authorization`
+> 헤더를 붙일 수 없는데, 토큰을 URL 쿼리에 노출하지 않으려고 이 경로도 헤더 인증을 그대로 쓴다.
+> 프론트에서는 fetch 기반 SSE 클라이언트(예: `@microsoft/fetch-event-source`)로 연결해야 한다.
+
 ### 실시간 화면에서 알림 울리기 (프론트 연동)
 
-CCTV 실시간 화면에서 감지 즉시 소리·팝업을 띄우려면 아래 두 API를 쓴다. 목록 전체를 계속 받아오지 않아도 된다.
+**권장: SSE(`/stream`)로 즉시 받고, 폴링은 끊겼을 때의 보완책으로 둔다.**
+
+폴링만 쓸 경우에는 아래 두 API를 쓴다. 목록 전체를 계속 받아오지 않아도 된다.
 
 ```text
 1) 화면 진입 시   GET /api/alerts/unread-count → latestAlertId 저장

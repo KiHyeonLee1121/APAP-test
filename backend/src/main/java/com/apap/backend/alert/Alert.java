@@ -3,6 +3,7 @@ package com.apap.backend.alert;
 import com.apap.backend.common.BaseEntity;
 import com.apap.backend.event.DetectionEvent;
 import com.apap.backend.user.User;
+import com.apap.backend.video.VideoSource;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -37,6 +38,17 @@ public class Alert extends BaseEntity {
     @JoinColumn(name = "receiver_id", nullable = false)
     private User receiver;
 
+    // 화면 우상단 알림에 "어느 카메라에서 잡혔는지"를 띄우기 위한 값.
+    // 연관관계(FK)가 아니라 알림 생성 시점의 스냅샷으로 저장한다 — 영상을 리셋하면
+    // video_sources가 조회에서 제외되므로(@SQLRestriction) FK로 걸면 알림 목록까지
+    // 함께 깨진다. 알림은 이력이므로 영상이 사라져도 어느 카메라였는지는 남아야 한다.
+    // 테스트/시스템 알림은 해당 없음(null).
+    @Column(name = "video_source_id")
+    private Long videoSourceId;
+
+    @Column(name = "video_source_name", length = 120)
+    private String videoSourceName;
+
     @Column(nullable = false, length = 30)
     private String channel;
 
@@ -67,6 +79,15 @@ public class Alert extends BaseEntity {
         this(null, receiver, message);
     }
 
+    // 실시간 감지 알림용: 감지 이벤트는 없지만 어느 카메라인지는 남긴다
+    public Alert(User receiver, VideoSource videoSource, String message) {
+        this(null, receiver, message);
+        if (videoSource != null) {
+            this.videoSourceId = videoSource.getId();
+            this.videoSourceName = videoSource.getName();
+        }
+    }
+
     public void markAsRead() {
         this.status = AlertStatus.READ;
         this.readAt = LocalDateTime.now();
@@ -82,6 +103,14 @@ public class Alert extends BaseEntity {
 
     public User getReceiver() {
         return receiver;
+    }
+
+    public Long getVideoSourceId() {
+        return videoSourceId;
+    }
+
+    public String getVideoSourceName() {
+        return videoSourceName;
     }
 
     public String getChannel() {

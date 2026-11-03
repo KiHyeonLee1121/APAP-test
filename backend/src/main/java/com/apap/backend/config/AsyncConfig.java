@@ -3,6 +3,7 @@ package com.apap.backend.config;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.annotation.EnableAsync;
+import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
 import java.util.concurrent.Executor;
@@ -10,9 +11,11 @@ import java.util.concurrent.Executor;
 /**
  * 업로드 시 자동 분석을 백그라운드로 돌리기 위한 비동기 설정.
  * AI 호출은 영상 길이에 따라 오래 걸리므로 업로드 응답을 막지 않는다.
+ * 스케줄링은 실시간 알림 SSE 연결 유지(하트비트)에 쓴다.
  */
 @Configuration
 @EnableAsync
+@EnableScheduling
 public class AsyncConfig {
 
     public static final String ANALYSIS_EXECUTOR = "analysisExecutor";

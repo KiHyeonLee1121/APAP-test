@@ -11,6 +11,7 @@ import com.apap.backend.video.VideoSourceType;
 import jakarta.persistence.EntityNotFoundException;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
+import org.springframework.http.MediaType;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -22,6 +23,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -36,17 +38,33 @@ public class AlertController {
     private final UserRepository userRepository;
     private final VideoSourceRepository videoSourceRepository;
     private final UserCaseRepository userCaseRepository;
+    private final AlertStreamService alertStreamService;
 
     public AlertController(
             AlertRepository alertRepository,
             UserRepository userRepository,
             VideoSourceRepository videoSourceRepository,
-            UserCaseRepository userCaseRepository
+            UserCaseRepository userCaseRepository,
+            AlertStreamService alertStreamService
     ) {
         this.alertRepository = alertRepository;
         this.userRepository = userRepository;
         this.videoSourceRepository = videoSourceRepository;
         this.userCaseRepository = userCaseRepository;
+        this.alertStreamService = alertStreamService;
+    }
+
+    /**
+     * 실시간 알림 스트림(SSE). 화면이 이 연결을 열어 두면 감지되는 순간
+     * 서버가 "alert" 이벤트를 밀어 주므로 우상단 알림을 바로 띄울 수 있다.
+     *
+     * 브라우저 기본 EventSource는 Authorization 헤더를 못 붙인다. 토큰을 URL에
+     * 노출하지 않기 위해 이 엔드포인트도 헤더 인증을 그대로 쓰므로, 화면에서는
+     * fetch 기반 SSE 클라이언트로 연결해야 한다(docs/api-spec.md 참고).
+     */
+    @GetMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE + ";charset=UTF-8")
+    public SseEmitter stream(@AuthenticationPrincipal AuthUser authUser) {
+        return alertStreamService.subscribe(authUser.id());
     }
 
     /**
@@ -101,13 +119,20 @@ public class AlertController {
                 "알림 " + hiddenCount + "건을 목록에서 숨겼습니다. 데이터는 서버에 보관됩니다.");
     }
 
-    /** 테스트 알림 발송: 현재 사용자에게 대시보드 알림 한 건을 생성한다. */
+    /**
+     * 테스트 알림 발송: 현재 사용자에게 대시보드 알림 한 건을 생성한다.
+     * 스트림으로도 함께 내보내므로 AI 서버 없이 우상단 알림 동작을 확인할 수 있다.
+     */
     @PostMapping("/test")
     public ApiResponse<AlertResponse> test(@AuthenticationPrincipal AuthUser authUser) {
         User receiver = userRepository.findById(authUser.id())
                 .orElseThrow(() -> new EntityNotFoundException("사용자를 찾을 수 없습니다."));
         Alert alert = alertRepository.save(new Alert(receiver, "테스트 알림입니다."));
-        return ApiResponse.ok(AlertResponse.from(alert), "테스트 알림이 발송되었습니다.");
+
+        AlertResponse response = AlertResponse.from(alert);
+        alertStreamService.publish(receiver.getId(), response);
+
+        return ApiResponse.ok(response, "테스트 알림이 발송되었습니다.");
     }
 
     /**
@@ -126,9 +151,16 @@ public class AlertController {
             throw new IllegalArgumentException(
                     "실시간 영상(CCTV/EDGE_GATEWAY)만 알림을 생성할 수 있습니다. 업로드 영상은 분석 결과로만 조회하세요.");
         }
+        User receiver = videoSource.getUser();
         Alert alert = alertRepository.save(
-                new Alert(videoSource.getUser(), resolveMessage(request, videoSource.getUser().getId())));
-        return ApiResponse.ok(AlertResponse.from(alert), "실시간 알림이 생성되었습니다.");
+                new Alert(receiver, videoSource, resolveMessage(request, receiver.getId())));
+
+        // 저장과 동시에 열려 있는 화면으로 밀어 준다. 연결이 없으면 조용히 넘어가고,
+        // 화면은 다음 폴링에서 같은 알림을 받는다.
+        AlertResponse response = AlertResponse.from(alert);
+        alertStreamService.publish(receiver.getId(), response);
+
+        return ApiResponse.ok(response, "실시간 알림이 생성되었습니다.");
     }
 
     /**
@@ -160,10 +192,20 @@ public class AlertController {
     public record UnreadCountResponse(long unreadCount, Long latestAlertId) {
     }
 
+    /**
+     * 알림 응답. videoSourceId/videoSourceName은 화면 우상단 알림에 "어느 카메라에서"
+     * 잡힌 감지인지 표시하려고 함께 내려준다. 테스트·시스템 알림은 null이다.
+     *
+     * 심각도(severity)는 넣지 않는다. 실시간 알림은 감지 이벤트 없이 만들어져 항상 null인 데다,
+     * detectionEvent를 실제로 로딩하면 영상 리셋으로 숨겨진 이벤트에서 조회가 깨진다.
+     * (detectionEventId는 프록시에서 바로 읽히므로 로딩을 유발하지 않는다)
+     */
     public record AlertResponse(
             Long id,
             Long detectionEventId,
             Long receiverId,
+            Long videoSourceId,
+            String videoSourceName,
             String channel,
             AlertStatus status,
             String message,
@@ -175,6 +217,8 @@ public class AlertController {
                     alert.getId(),
                     alert.getDetectionEvent() == null ? null : alert.getDetectionEvent().getId(),
                     alert.getReceiver().getId(),
+                    alert.getVideoSourceId(),
+                    alert.getVideoSourceName(),
                     alert.getChannel(),
                     alert.getStatus(),
                     alert.getMessage(),
