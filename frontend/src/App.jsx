@@ -8,6 +8,7 @@ import AlertPage from './pages/AlertPage';
 import TermsPage from './pages/TermsPage';
 import ProtectedRoute from './components/ProtectedRoute';
 import { AuthProvider } from './context/AuthContext';
+import { AlertStreamProvider } from './context/AlertStreamProvider';
 
 import './App.css';
 
@@ -15,22 +16,25 @@ function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<LoginPage />} />
-          <Route path="/terms" element={<TermsPage />} />
+        {/* 실시간 감지 알림 토스트는 화면과 무관하게 떠야 해서 라우트 바깥을 감싼다 */}
+        <AlertStreamProvider>
+          <Routes>
+            <Route path="/" element={<LoginPage />} />
+            <Route path="/terms" element={<TermsPage />} />
 
-          <Route element={<ProtectedRoute />}>
-            <Route path="/main" element={<MainPage />} />
+            <Route element={<ProtectedRoute />}>
+              <Route path="/main" element={<MainPage />} />
 
-            <Route path="/cctv" element={<CCTVPage />} />
+              <Route path="/cctv" element={<CCTVPage />} />
 
-            <Route path="/saved-video" element={<SavedVideoPage />} />
+              <Route path="/saved-video" element={<SavedVideoPage />} />
 
-            <Route path="/alert" element={<AlertPage />} />
-          </Route>
+              <Route path="/alert" element={<AlertPage />} />
+            </Route>
 
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </AlertStreamProvider>
       </BrowserRouter>
     </AuthProvider>
   );
