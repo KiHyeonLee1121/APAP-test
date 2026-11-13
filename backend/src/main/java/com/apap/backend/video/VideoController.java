@@ -115,6 +115,10 @@ public class VideoController {
      * 저장된 영상 리셋. 화면에서만 감추고 DB 행과 저장된 파일(S3/로컬)은 그대로 남긴다.
      * 영상에 딸린 분석 작업과 감지 이벤트도 함께 숨겨 화면·집계가 어긋나지 않게 한다.
      * 알림은 별도(POST /api/alerts/reset)로 리셋한다.
+     *
+     * 대상은 업로드 영상(UPLOAD)뿐이다. CCTV/EDGE_GATEWAY 소스는 "저장된 영상"이 아니라
+     * 등록해 둔 카메라라서 리셋으로 사라지면 안 된다. 실시간 화면이 등록된 CCTV 소스를 찾아
+     * 스트림에 video_source_id를 붙이므로, 같이 숨기면 카메라를 못 찾아 실시간 알림이 끊긴다.
      */
     @PostMapping("/reset")
     @Transactional
@@ -123,9 +127,9 @@ public class VideoController {
 
         // 영상보다 딸린 데이터를 먼저 숨겨야 한다. 영상을 먼저 숨기면
         // 하위 조회 조건(video_sources)에서 걸러져 함께 처리되지 않는다.
-        detectionEventRepository.hideAllByUserId(userId);
-        analysisJobRepository.hideAllByUserId(userId);
-        int hiddenCount = videoSourceRepository.hideAllByUserId(userId);
+        detectionEventRepository.hideUploadedByUserId(userId);
+        analysisJobRepository.hideUploadedByUserId(userId);
+        int hiddenCount = videoSourceRepository.hideUploadedByUserId(userId);
 
         return ApiResponse.ok(new ResetResponse(hiddenCount),
                 "저장된 영상 " + hiddenCount + "건을 목록에서 숨겼습니다. 데이터는 서버에 보관됩니다.");
