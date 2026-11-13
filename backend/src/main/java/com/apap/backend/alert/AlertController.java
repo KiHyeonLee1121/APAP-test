@@ -1,0 +1,230 @@
+package com.apap.backend.alert;
+
+import com.apap.backend.auth.AuthUser;
+import com.apap.backend.cases.UserCaseRepository;
+import com.apap.backend.common.ApiResponse;
+import com.apap.backend.user.User;
+import com.apap.backend.user.UserRepository;
+import com.apap.backend.video.VideoSource;
+import com.apap.backend.video.VideoSourceRepository;
+import com.apap.backend.video.VideoSourceType;
+import jakarta.persistence.EntityNotFoundException;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
+import org.springframework.http.MediaType;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+
+import java.time.LocalDateTime;
+import java.util.List;
+
+@RestController
+@RequestMapping("/api/alerts")
+public class AlertController {
+
+    private static final String DEFAULT_LIVE_ALERT_MESSAGE = "비정상 행동이 감지되었습니다.";
+
+    private final AlertRepository alertRepository;
+    private final UserRepository userRepository;
+    private final VideoSourceRepository videoSourceRepository;
+    private final UserCaseRepository userCaseRepository;
+    private final AlertStreamService alertStreamService;
+
+    public AlertController(
+            AlertRepository alertRepository,
+            UserRepository userRepository,
+            VideoSourceRepository videoSourceRepository,
+            UserCaseRepository userCaseRepository,
+            AlertStreamService alertStreamService
+    ) {
+        this.alertRepository = alertRepository;
+        this.userRepository = userRepository;
+        this.videoSourceRepository = videoSourceRepository;
+        this.userCaseRepository = userCaseRepository;
+        this.alertStreamService = alertStreamService;
+    }
+
+    /**
+     * 실시간 알림 스트림(SSE). 화면이 이 연결을 열어 두면 감지되는 순간
+     * 서버가 "alert" 이벤트를 밀어 주므로 우상단 알림을 바로 띄울 수 있다.
+     *
+     * 브라우저 기본 EventSource는 Authorization 헤더를 못 붙인다. 토큰을 URL에
+     * 노출하지 않기 위해 이 엔드포인트도 헤더 인증을 그대로 쓰므로, 화면에서는
+     * fetch 기반 SSE 클라이언트로 연결해야 한다(docs/api-spec.md 참고).
+     */
+    @GetMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE + ";charset=UTF-8")
+    public SseEmitter stream(@AuthenticationPrincipal AuthUser authUser) {
+        return alertStreamService.subscribe(authUser.id());
+    }
+
+    /**
+     * 내 알림 목록. sinceId를 주면 그 id보다 새로 생긴 알림만 돌려준다.
+     * 실시간 화면에서 새 알림만 받아 소리를 울릴 때 쓴다(생략하면 기존처럼 전체 목록).
+     */
+    @GetMapping
+    public ApiResponse<List<AlertResponse>> list(@AuthenticationPrincipal AuthUser authUser,
+                                                 @RequestParam(required = false) Long sinceId) {
+        List<Alert> alerts = sinceId == null
+                ? alertRepository.findAllByReceiverIdOrderByIdDesc(authUser.id())
+                : alertRepository.findAllByReceiverIdAndIdGreaterThanOrderByIdDesc(authUser.id(), sinceId);
+        return ApiResponse.ok(alerts.stream().map(AlertResponse::from).toList());
+    }
+
+    /**
+     * 새 알림 도착 확인용 경량 조회. 실시간 화면이 짧은 주기로 폴링해
+     * latestAlertId가 바뀌면 소리를 울리는 식으로 쓴다.
+     * 목록 전체를 내려받지 않으므로 자주 호출해도 부담이 적다.
+     */
+    @GetMapping("/unread-count")
+    public ApiResponse<UnreadCountResponse> unreadCount(@AuthenticationPrincipal AuthUser authUser) {
+        long unread = alertRepository.countByReceiverIdAndStatusNot(authUser.id(), AlertStatus.READ);
+        Long latestAlertId = alertRepository.findFirstByReceiverIdOrderByIdDesc(authUser.id())
+                .map(Alert::getId)
+                .orElse(null);
+        return ApiResponse.ok(new UnreadCountResponse(unread, latestAlertId));
+    }
+
+    @PatchMapping("/{alertId}/read")
+    public ApiResponse<AlertResponse> read(@PathVariable Long alertId,
+                                           @AuthenticationPrincipal AuthUser authUser) {
+        Alert alert = alertRepository.findById(alertId)
+                .orElseThrow(() -> new EntityNotFoundException("알림을 찾을 수 없습니다."));
+        if (!alert.getReceiver().getId().equals(authUser.id())) {
+            throw new EntityNotFoundException("알림을 찾을 수 없습니다.");
+        }
+        alert.markAsRead();
+        return ApiResponse.ok(AlertResponse.from(alertRepository.save(alert)));
+    }
+
+    /**
+     * 알림 리셋. 읽음/안읽음 구분 없이 내 알림을 전부 화면에서 감춘다.
+     * DB 행은 지우지 않고 숨김 표시만 하므로 이력은 서버에 남는다.
+     * 영상 리셋(POST /api/videos/reset)과는 독립적으로 동작한다.
+     */
+    @PostMapping("/reset")
+    @Transactional
+    public ApiResponse<ResetResponse> reset(@AuthenticationPrincipal AuthUser authUser) {
+        int hiddenCount = alertRepository.hideAllByReceiverId(authUser.id());
+        return ApiResponse.ok(new ResetResponse(hiddenCount),
+                "알림 " + hiddenCount + "건을 목록에서 숨겼습니다. 데이터는 서버에 보관됩니다.");
+    }
+
+    /**
+     * 테스트 알림 발송: 현재 사용자에게 대시보드 알림 한 건을 생성한다.
+     * 스트림으로도 함께 내보내므로 AI 서버 없이 우상단 알림 동작을 확인할 수 있다.
+     */
+    @PostMapping("/test")
+    public ApiResponse<AlertResponse> test(@AuthenticationPrincipal AuthUser authUser) {
+        User receiver = userRepository.findById(authUser.id())
+                .orElseThrow(() -> new EntityNotFoundException("사용자를 찾을 수 없습니다."));
+        Alert alert = alertRepository.save(new Alert(receiver, "테스트 알림입니다."));
+
+        AlertResponse response = AlertResponse.from(alert);
+        alertStreamService.publish(receiver.getId(), response);
+
+        return ApiResponse.ok(response, "테스트 알림이 발송되었습니다.");
+    }
+
+    /**
+     * 실시간 감지 알림: AI 서버가 카메라별로 알림 여부를 이미 판단(5연속 감지 +
+     * 짧은 재발동 쿨다운)한 뒤 호출하므로, 여기서는 중복 억제 없이 그대로 저장한다.
+     * 인증 사용자가 없는 서버 간 호출이라 videoSourceId로 수신자(카메라 소유자)를 정한다.
+     */
+    @PostMapping("/live")
+    public ApiResponse<AlertResponse> live(@Valid @RequestBody LiveAlertRequest request) {
+        VideoSource videoSource = videoSourceRepository.findById(request.videoSourceId())
+                .orElseThrow(() -> new EntityNotFoundException("영상 소스를 찾을 수 없습니다."));
+
+        // 알림 내역에는 실시간 영상(CCTV/엣지)의 감지만 남긴다.
+        // 업로드 영상의 배치 분석은 알림을 만들지 않으므로 여기서도 막는다.
+        if (videoSource.getType() == VideoSourceType.UPLOAD) {
+            throw new IllegalArgumentException(
+                    "실시간 영상(CCTV/EDGE_GATEWAY)만 알림을 생성할 수 있습니다. 업로드 영상은 분석 결과로만 조회하세요.");
+        }
+        User receiver = videoSource.getUser();
+        Alert alert = alertRepository.save(
+                new Alert(receiver, videoSource, resolveMessage(request, receiver.getId())));
+
+        // 저장과 동시에 열려 있는 화면으로 밀어 준다. 연결이 없으면 조용히 넘어가고,
+        // 화면은 다음 폴링에서 같은 알림을 받는다.
+        AlertResponse response = AlertResponse.from(alert);
+        alertStreamService.publish(receiver.getId(), response);
+
+        return ApiResponse.ok(response, "실시간 알림이 생성되었습니다.");
+    }
+
+    /**
+     * 알림 문구 결정 순서 (7월 회의: in user_id, case_id → out msg)
+     * 1) AI 서버가 보낸 message가 있으면 그대로 사용
+     * 2) 없으면 수신자가 구독한 활성 케이스의 out_msg 사용(여러 개면 가장 먼저 등록한 것)
+     * 3) 그것도 없으면 기본 문구
+     */
+    private String resolveMessage(LiveAlertRequest request, Long receiverId) {
+        if (StringUtils.hasText(request.message())) {
+            return request.message();
+        }
+        return userCaseRepository.findFirstByUserIdAndActiveIsTrueOrderByIdAsc(receiverId)
+                .map(userCase -> userCase.getDetectionCase().getOutMsg())
+                .orElse(DEFAULT_LIVE_ALERT_MESSAGE);
+    }
+
+    public record LiveAlertRequest(@NotNull Long videoSourceId, String message) {
+    }
+
+    /** 리셋 결과: 화면에서 숨긴 건수 (DB 행은 삭제되지 않음) */
+    public record ResetResponse(int hiddenCount) {
+    }
+
+    /**
+     * 실시간 화면 폴링용 응답.
+     * latestAlertId가 직전 값과 달라졌으면 새 알림이 도착한 것이다(알림이 없으면 null).
+     */
+    public record UnreadCountResponse(long unreadCount, Long latestAlertId) {
+    }
+
+    /**
+     * 알림 응답. videoSourceId/videoSourceName은 화면 우상단 알림에 "어느 카메라에서"
+     * 잡힌 감지인지 표시하려고 함께 내려준다. 테스트·시스템 알림은 null이다.
+     *
+     * 심각도(severity)는 넣지 않는다. 실시간 알림은 감지 이벤트 없이 만들어져 항상 null인 데다,
+     * detectionEvent를 실제로 로딩하면 영상 리셋으로 숨겨진 이벤트에서 조회가 깨진다.
+     * (detectionEventId는 프록시에서 바로 읽히므로 로딩을 유발하지 않는다)
+     */
+    public record AlertResponse(
+            Long id,
+            Long detectionEventId,
+            Long receiverId,
+            Long videoSourceId,
+            String videoSourceName,
+            String channel,
+            AlertStatus status,
+            String message,
+            LocalDateTime sentAt,
+            LocalDateTime readAt
+    ) {
+        static AlertResponse from(Alert alert) {
+            return new AlertResponse(
+                    alert.getId(),
+                    alert.getDetectionEvent() == null ? null : alert.getDetectionEvent().getId(),
+                    alert.getReceiver().getId(),
+                    alert.getVideoSourceId(),
+                    alert.getVideoSourceName(),
+                    alert.getChannel(),
+                    alert.getStatus(),
+                    alert.getMessage(),
+                    alert.getSentAt(),
+                    alert.getReadAt()
+            );
+        }
+    }
+}

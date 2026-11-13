@@ -1,127 +1,387 @@
-# API 명세 초안
+# APAP API 명세 (Backend)
 
-현재 API는 구현 전이며, 아래 내용은 예상 명세 초안입니다. 실제 구현 시 요청/응답 필드와 인증 방식은 변경될 수 있습니다.
+비정상 행동 알람 플랫폼 백엔드 REST API 명세입니다. 구현 기준(Spring Boot 3.3 / Java 17 / MySQL 8)으로 작성되었습니다.
 
-## POST /api/events
+- Base URL(로컬): `http://localhost:8080`
+- 모든 응답은 JSON. 인증은 **JWT Bearer 토큰**.
 
-AI 서버가 이상행동 탐지 이벤트를 백엔드로 전송합니다.
+## 공통 응답 형식
 
-### Request
+성공:
 
 ```json
+{ "success": true, "data": { }, "message": "선택적 메시지" }
+```
+
+실패:
+
+```json
+{ "success": false, "error": { "code": "ERROR_CODE", "message": "사람이 읽을 메시지" } }
+```
+
+### 에러 코드
+
+| HTTP | code | 의미 |
+|---|---|---|
+| 400 | `BAD_REQUEST` | 잘못된 요청/도메인 규칙 위반 |
+| 400 | `VALIDATION_ERROR` | 입력 검증 실패 |
+| 401 | `UNAUTHORIZED` | 토큰 없음/만료/위조 |
+| 403 | `FORBIDDEN` | 권한 부족 |
+| 404 | `NOT_FOUND` | 리소스 없음 |
+| 500 | `SERVER_ERROR` | 서버 내부 오류 |
+
+## 인증 / 권한
+
+- 로그인: 구글 OIDC ID 토큰을 검증한 뒤 **자체 JWT(HS256)** 를 발급한다.
+- 보호된 API 호출 시 헤더: `Authorization: Bearer <accessToken>`
+- 공개 경로(토큰 불필요): `GET /api/health`, `POST /api/auth/google`, `POST /api/analysis/callback`, `POST /api/alerts/live`(AI 서버 전용), Swagger(`/swagger-ui/**`, `/v3/api-docs/**`), 정적 페이지(`/`, `/google-login.html`)
+- 역할: `ADMIN`, `MANAGER`, `VIEWER` (신규 가입 기본값 `MANAGER`)
+
+| 작업 | 필요 권한 |
+|---|---|
+| 조회(GET): 영상/이벤트/분석작업/알림/대시보드/내 정보/케이스/로그인 이력 | 인증된 모든 역할(VIEWER 이상) |
+| 쓰기: 영상 등록·업로드·수정·삭제, 분석 요청, 알림 읽음·테스트, 케이스 등록 | MANAGER 이상 |
+| `POST /api/analysis/callback` | 공개(엣지/AI용, 추후 API Key 보호 권장) |
+
+> 목록/요약/알림 등은 **쿼리 파라미터 userId를 받지 않으며**, JWT 토큰의 사용자 기준으로 동작한다.
+
+---
+
+## Auth
+
+### POST /api/auth/google — 구글 로그인 (공개)
+
+요청:
+```json
+{ "idToken": "<구글 OIDC ID 토큰(JWT)>" }
+```
+응답 `data`:
+```json
 {
-  "eventType": "FALL_DETECTED",
-  "cameraId": "CAM-001",
-  "detectedAt": "2026-05-07T10:30:00+09:00",
-  "confidence": 0.92,
-  "snapshotUrl": "https://storage.example.com/events/event-001.jpg"
+  "accessToken": "<서비스 JWT>",
+  "user": { "id": 1, "email": "user@example.com", "name": "홍길동", "pictureUrl": "https://...", "role": "MANAGER" }
 }
 ```
+동작: ID 토큰 검증(서명·만료·issuer·audience=`GOOGLE_CLIENT_ID`·`email_verified`) → `google_sub`/`email`로 find-or-create → JWT 발급. **성공 시 로그인 이력 1건 자동 기록**(7월 회의).
 
-### Response
+### GET /api/auth/me — 현재 사용자 (인증)
+응답 `data`: 위 `user`와 동일 구조.
 
+### GET /api/auth/login-history — 내 로그인 이력 (인증)
+본인 이력만 최신순 조회. 응답 `data`:
+```json
+[ { "id": 3, "userId": 1, "loggedInAt": "2026-07-30T10:12:00" } ]
+```
+
+### POST /api/auth/logout — 로그아웃 (인증)
+무상태. `data: null`, 클라이언트가 토큰 폐기.
+
+### DELETE /api/auth/me — 회원 탈퇴 (인증)
+실제 삭제 대신 **soft delete + 개인정보 익명화**로 처리한다.
+- `deleted=true`로 표시하고 email/googleSub는 `withdrawn_{id}...`로, 이름은 `탈퇴한 사용자`로 치환, 프로필 이미지 제거
+- 탈퇴 후에는 토큰이 남아 있어도 조회되지 않는다(`404 NOT_FOUND`)
+- unique 값까지 치환하므로 **같은 구글 계정으로 재가입 가능**(새 계정으로 생성됨)
+
+응답: `data: null`, `message: "회원 탈퇴가 완료되었습니다."`
+
+---
+
+## Case (감지 케이스, 7월 회의 신규)
+
+서비스 시나리오(한강 교각 위험 행동 / 식당 식권 미제출 / 영화관 무단입장 / 마트 주머니 은닉)를 케이스로 관리한다. 초기 4종은 서버 기동 시 자동 시드된다.
+
+### GET /api/cases — 케이스 목록 (인증)
+```json
+[ { "id": 1, "name": "한강 교각 위험 행동", "description": "...", "outMsg": "한강 교각 주변에서 위험 행동이 감지되었습니다..." } ]
+```
+
+### POST /api/user-cases — 유저 케이스 등록 (MANAGER+)
+요청 `{ "caseId": 1 }` → 응답 `data`에 케이스 `outMsg` 포함(회의: in user_id, case_id → out msg). 중복 등록 시 400.
+```json
+{ "id": 1, "userId": 1, "caseId": 1, "caseName": "한강 교각 위험 행동", "outMsg": "...", "active": true }
+```
+
+### GET /api/user-cases — 내 케이스 목록 (인증)
+위 UserCaseResponse 배열.
+
+> 현재 영상 분석 결과로는 Alert를 자동 생성하지 않는다. `outMsg`는 케이스 관리 응답값으로 유지한다.
+
+---
+
+## Video (`/api/videos`)
+
+VideoResponse:
 ```json
 {
-  "eventId": "event-001",
-  "status": "RECEIVED"
+  "id": 1,
+  "userId": 1,
+  "type": "UPLOAD",
+  "name": "출입구 CCTV",
+  "author": "홍길동",
+  "sourceUrl": "uploads/x.mp4",
+  "status": "READY",
+  "createdAt": "2026-09-03T10:12:00",
+  "analysisJobId": 7
 }
 ```
+- `type`: `UPLOAD` | `CCTV` | `EDGE_GATEWAY`
+- `status`: `READY` | `ANALYZING` | `ERROR` | `DISABLED`
+- `name`: 영상 제목. 업로드 시 별도 제목을 보내지 않으면 원본 파일명을 사용
+- `author`: 영상 소유자인 로그인 사용자 이름
+- `createdAt`: 영상 저장 시각
+- `analysisJobId`: **업로드 시 자동 생성된 분석 작업 id**. 업로드 외 응답이나 자동 분석이 꺼진 경우 `null`
 
-## GET /api/events
+| Method | Path | 권한 | 설명 |
+|---|---|---|---|
+| POST | `/api/videos` | MANAGER+ | 영상 소스 등록. body `{type, name, sourceUrl}` (자동 분석 대상 아님) |
+| POST | `/api/videos/upload` | MANAGER+ | 파일 업로드(multipart `file`, 선택 `name`) → 저장 후 VideoSource 생성 + **분석 자동 시작** |
+| GET | `/api/videos` | 인증 | 내 영상 목록 |
+| GET | `/api/videos/{videoId}` | 인증(소유자) | 상세 |
+| GET | `/api/videos/{videoId}/content` | 인증(소유자) | 저장된 영상 파일 재생용 스트림 |
+| PATCH | `/api/videos/{videoId}` | MANAGER+(소유자) | 수정. body `{type, name, sourceUrl, status}` |
+| DELETE | `/api/videos/{videoId}` | MANAGER+(소유자) | soft delete |
+| POST | `/api/videos/reset` | MANAGER+ | **저장된 영상 전체 리셋** — 목록에서 숨김. 응답 `{hiddenCount}` |
 
-이벤트 목록을 조회합니다.
+**리셋 동작 (POST /api/videos/reset)**
+- **업로드 영상(`type=UPLOAD`)만** 화면에서 감춘다. **DB 행과 저장된 파일(S3/로컬)은 지우지 않는다**(`deleted=true`로 표시만).
+- **CCTV / EDGE_GATEWAY 소스는 리셋 대상이 아니다.** 등록해 둔 카메라는 "저장된 영상"이 아니라서 남긴다.
+  > 실시간 화면은 `GET /api/videos`에서 `type=CCTV`인 소스를 찾아 스트림에 `video_source_id`를 붙인다.
+  > 카메라까지 숨기면 그 id를 못 찾아 파라미터 없이 연결되고, AI 서버가 알림을 보내지 않아
+  > **실시간 감지 알림이 통째로 끊긴다.** (실제로 발생했던 문제)
+- 업로드 영상에 딸린 **분석 작업·감지 이벤트도 함께 숨겨** 목록과 대시보드 집계가 어긋나지 않게 한다.
+  CCTV 소스에서 나온 작업·이벤트는 유지된다.
+- **알림은 건드리지 않는다.** 알림은 `POST /api/alerts/reset`으로 따로 리셋한다(화면이 분리되어 있어 각각 비울 수 있게 함).
+- 응답: `{ "hiddenCount": 12 }` — 숨긴 업로드 영상 수 + 데이터가 보관된다는 안내 메시지.
 
-### Request
+**업로드 용량 제한 없음**: 영상 파일 크기 제한을 해제했다(Spring 기본값 파일 1MB/요청 10MB → 무제한). 필요 시 `MAX_UPLOAD_SIZE`로 상한을 걸 수 있다.
 
-```text
-GET /api/events?status=OPEN&page=1&size=20
+**업로드 시 자동 분석**: `/api/videos/upload`로 파일을 올리면 별도 요청 없이 분석이 시작된다.
+- 업로드 API는 즉시 응답하고(AI 호출은 백그라운드 실행), 응답의 `analysisJobId`로 `GET /api/analysis/jobs/{jobId}`를 조회해 진행 상황을 확인한다.
+- 영상 상태는 `ANALYZING` → 성공 `READY` / 실패 `ERROR`로 바뀐다.
+- `apap.analysis.auto-on-upload=false`(환경변수 `ANALYSIS_AUTO_ON_UPLOAD`)로 끄면 기존처럼 `POST /api/analysis/jobs` 수동 요청만 동작한다.
+
+`sourceUrl` 의미 (저장 모드에 따라 다름):
+- **local 모드(기본)**: 업로드 디렉터리 기준 파일 경로 (예: `uploads/videos/{uuid}-{filename}`)
+- **s3 모드(운영)**: S3 객체 키 `videos/{uuid}-{filename}` — 풀 URL이 아닌 **키만** 저장. AI 서버는 이 키로 S3에서 직접 읽는다
+- 라벨/케이스 등 분류 정보는 키/경로에 넣지 않고 **DB 컬럼으로만** 관리한다 (AI 학습 시 S3 목록 순회와 무관하게 유지)
+
+> 타인 소유 리소스 접근 시 정보 노출 방지를 위해 `404 NOT_FOUND` 반환.
+
+---
+
+## Analysis (`/api/analysis`)
+
+AnalysisJobResponse:
+```json
+{ "id": 1, "videoSourceId": 1, "status": "DONE", "requestedAt": "...", "completedAt": "...", "errorMessage": null }
 ```
+- `status`: `PENDING` | `RUNNING` | `DONE` | `FAILED`
 
-### Response
+| Method | Path | 권한 | 설명 |
+|---|---|---|---|
+| POST | `/api/analysis/jobs` | MANAGER+ | **재분석** 요청. body `{videoSourceId}`. AI 서버 `/predict/video` **동기 호출** 후 DetectionEvent 저장. 비정상 결과여도 Alert는 자동 생성하지 않음 (업로드는 자동 분석되므로 이 API는 다시 돌릴 때 사용) |
+| GET | `/api/analysis/jobs` | 인증 | 내 분석 작업 목록 |
+| GET | `/api/analysis/jobs/{jobId}` | 인증 | 분석 작업 상세 |
+| POST | `/api/analysis/callback` | 공개 | 엣지/AI가 결과 직접 전송. body 아래 |
 
+콜백 요청:
 ```json
 {
-  "items": [
+  "jobId": 1,
+  "status": "DONE",
+  "errorMessage": null,
+  "events": [
     {
-      "eventId": "event-001",
-      "eventType": "FALL_DETECTED",
-      "cameraId": "CAM-001",
-      "status": "OPEN",
-      "detectedAt": "2026-05-07T10:30:00+09:00"
+      "eventType": "ABNORMAL",
+      "severity": "HIGH",
+      "confidenceScore": 0.91,
+      "detectedAt": "2026-07-01T12:10:00",
+      "snapshotUrl": "uploads/snapshot-1.jpg",
+      "clipUrl": "uploads/clip-1.mp4",
+      "resultJson": "{\"reason\": \"...\"}"
     }
-  ],
-  "page": 1,
-  "size": 20,
-  "totalCount": 1
+  ]
+}
+```
+- `eventType`: `NORMAL` | `ABNORMAL` | `FALL` | `INTRUSION` | `ANOMALOUS` | `UNKNOWN`
+- `severity`: `LOW` | `MEDIUM` | `HIGH` | `CRITICAL`
+- `ABNORMAL/FALL/INTRUSION/ANOMALOUS`도 DetectionEvent만 저장하고 Alert는 자동 생성하지 않는다.
+
+---
+
+## Event (`/api/events`)
+
+EventResponse:
+```json
+{
+  "id": 1, "analysisJobId": 1, "videoSourceId": 1,
+  "eventType": "ABNORMAL", "severity": "HIGH", "confidenceScore": 0.91,
+  "detectedAt": "...", "snapshotUrl": "...", "clipUrl": "...", "resultJson": "..."
 }
 ```
 
-## GET /api/events/{eventId}
+| Method | Path | 권한 | 설명 |
+|---|---|---|---|
+| GET | `/api/events` | 인증 | 내 감지 이벤트 목록(detectedAt 내림차순) |
+| GET | `/api/events/{eventId}` | 인증 | 이벤트 상세 |
 
-특정 이벤트의 상세 정보를 조회합니다.
+---
 
-### Request
+## Dashboard (`/api/dashboard`)
+
+| Method | Path | 권한 | 응답 `data` |
+|---|---|---|---|
+| GET | `/api/dashboard/summary` | 인증 | `{videos, analysisJobs, abnormalEvents, unreadAlerts}` (모두 정수) |
+| GET | `/api/dashboard/timeline` | 인증 | `[{date:"2026-07-01", count:3}, ...]` 날짜별 이벤트 수 |
+| GET | `/api/dashboard/severity` | 인증 | `[{severity:"LOW", count:0}, ...]` 심각도별 수(4단계 전부 포함) |
+
+`abnormalEvents`는 `ABNORMAL/FALL/INTRUSION/ANOMALOUS` 합계.
+
+---
+
+## Alert (`/api/alerts`)
+
+AlertResponse:
+```json
+{
+  "id": 1, "detectionEventId": 10, "receiverId": 1,
+  "videoSourceId": 123, "videoSourceName": "정문 카메라",
+  "channel": "DASHBOARD", "status": "SENT", "message": "...",
+  "sentAt": "...", "readAt": null
+}
+```
+- `status`: `PENDING` | `SENT` | `FAILED` | `READ`
+- `detectionEventId`는 테스트/시스템 알림의 경우 `null`
+- `videoSourceId` / `videoSourceName`: 어느 카메라에서 잡힌 감지인지. 화면 우상단 알림에 쓴다.
+  테스트/시스템 알림은 `null`. **알림 생성 시점의 스냅샷**이라 영상을 리셋해도 남는다
+  (연관관계로 걸면 숨겨진 영상 때문에 알림 목록 조회까지 깨져서 값으로 저장한다)
+- 심각도(`severity`)는 내려주지 않는다 — 실시간 알림은 감지 이벤트 없이 생성되어 항상 비어 있다
+
+| Method | Path | 권한 | 설명 |
+|---|---|---|---|
+| GET | `/api/alerts` | 인증 | 내 알림 목록. `?sinceId=N`이면 **N보다 새로 생긴 알림만** |
+| GET | `/api/alerts/stream` | 인증 | **실시간 알림 스트림(SSE)** — 감지 즉시 서버가 밀어 준다 |
+| GET | `/api/alerts/unread-count` | 인증 | 새 알림 확인용 경량 조회. 응답 `{unreadCount, latestAlertId}` |
+| PATCH | `/api/alerts/{alertId}/read` | MANAGER+(수신자) | 읽음 처리 |
+| POST | `/api/alerts/test` | MANAGER+ | 본인에게 테스트 알림 1건 생성 |
+| POST | `/api/alerts/reset` | MANAGER+ | **알림 전체 리셋** — 목록에서 숨김. 응답 `{hiddenCount}` |
+| POST | `/api/alerts/live` | 공개(AI 서버용) | **실시간 감지 알림 생성**. body `{videoSourceId, message?}` |
+
+### POST /api/alerts/live — 실시간 감지 알림 (공개)
+
+AI 서버가 실시간 스트림에서 비정상을 감지했을 때 호출한다. 인증 사용자가 없는 서버 간 호출이라 공개 경로이며, `videoSourceId`로 수신자(카메라 소유자)를 정한다.
+
+요청:
+```json
+{ "videoSourceId": 123, "message": "비정상 행동이 감지되었습니다" }
+```
+- `videoSourceId`: **필수**. 존재하지 않으면 `404 NOT_FOUND`
+- `message`: 선택
+
+> **알림 내역에는 실시간 영상의 감지만 들어간다.** `videoSourceId`가 `UPLOAD` 타입이면 `400 BAD_REQUEST`로 거절한다. 업로드 영상의 배치 분석 결과는 알림이 아니라 `GET /api/events`(감지 이벤트)로 확인한다.
+
+**알림 문구 결정 순서**
+1. 요청에 `message`가 있으면 그대로 사용
+2. 없으면 **수신자가 구독한 활성 케이스의 `out_msg`** 사용 (7월 회의: `in user_id, case_id → out msg`. 여러 개면 가장 먼저 등록한 것)
+3. 구독한 케이스도 없으면 기본 문구 `"비정상 행동이 감지되었습니다."`
+
+**중복 억제 없음**: AI 서버가 5연속 감지 + 재발동 쿨다운으로 이미 걸러서 호출하므로, 백엔드는 받은 대로 저장한다.
+
+> ⚠️ 현재 공개 경로라 누구나 호출해 알림을 만들 수 있다. `POST /api/analysis/callback`과 함께 **API Key 보호가 후속 과제**다.
+
+### GET /api/alerts/stream — 실시간 알림 스트림 (SSE)
+
+감지 **즉시** 화면 우상단에 알림을 띄우기 위한 경로. 화면이 이 연결을 열어 두면
+`POST /api/alerts/live`(또는 `/test`)로 알림이 생기는 순간 서버가 바로 내보낸다.
+폴링은 주기만큼 늦기 때문에 토스트 알림은 이 경로를 쓴다.
 
 ```text
-GET /api/events/event-001
+event:connected
+data:{"connectedAt":"2026-11-03T17:03:01"}
+
+event:alert
+data:{"id":2,"receiverId":4,"videoSourceId":4,"videoSourceName":"후문 카메라",
+      "message":"비정상 행동이 감지되었습니다.","status":"SENT","sentAt":"..."}
 ```
 
-### Response
+- `alert` 이벤트의 `data`는 **AlertResponse와 같은 형태**다. 그대로 토스트에 꽂으면 된다.
+- 연결 직후 `connected` 이벤트가 한 번 오고, 25초마다 주석(`:keep-alive`)이 흘러 연결이 유지된다.
+- 연결 최대 30분. 만료되면 클라이언트가 재연결하면 된다. 한 사용자가 여러 탭을 열어도 모두 받는다.
+- 열린 연결이 없으면 알림은 저장만 되고, 화면은 다음 폴링에서 받는다. **스트림이 끊겨도 알림은 유실되지 않는다.**
 
-```json
-{
-  "eventId": "event-001",
-  "eventType": "FALL_DETECTED",
-  "cameraId": "CAM-001",
-  "status": "OPEN",
-  "detectedAt": "2026-05-07T10:30:00+09:00",
-  "confidence": 0.92,
-  "snapshotUrl": "https://storage.example.com/events/event-001.jpg",
-  "memo": null
-}
+> ⚠️ **브라우저 기본 `EventSource`로는 연결되지 않는다.** `EventSource`는 `Authorization`
+> 헤더를 붙일 수 없는데, 토큰을 URL 쿼리에 노출하지 않으려고 이 경로도 헤더 인증을 그대로 쓴다.
+> 프론트에서는 fetch 기반 SSE 클라이언트(예: `@microsoft/fetch-event-source`)로 연결해야 한다.
+
+### 실시간 화면에서 알림 울리기 (프론트 연동)
+
+**권장: SSE(`/stream`)로 즉시 받고, 폴링은 끊겼을 때의 보완책으로 둔다.**
+
+폴링만 쓸 경우에는 아래 두 API를 쓴다. 목록 전체를 계속 받아오지 않아도 된다.
+
+```text
+1) 화면 진입 시   GET /api/alerts/unread-count → latestAlertId 저장
+2) 2~3초마다     GET /api/alerts/unread-count
+                 latestAlertId가 저장값과 다르면 → 새 알림 도착! 소리 재생
+3) 내용이 필요하면 GET /api/alerts?sinceId={저장값} → 새로 생긴 알림만 받아 팝업 표시
+4) 저장값을 새 latestAlertId로 갱신
 ```
 
-## PATCH /api/events/{eventId}/status
+- `unreadCount`: 읽지 않은 알림 수 (배지 숫자용)
+- `latestAlertId`: 가장 최근 알림 id. **알림이 하나도 없으면 응답에 없음(null)**
+- 리셋(`POST /api/alerts/reset`)으로 숨긴 알림은 두 API 모두에서 제외된다
 
-이벤트 처리 상태를 변경합니다.
+**리셋 동작 (POST /api/alerts/reset)**
+- 읽음/안읽음 구분 없이 내 알림 전부를 화면에서 감춘다. **DB 행은 지우지 않는다**(`deleted=true`로 표시만).
+- 대시보드의 `unreadAlerts` 집계에서도 함께 빠진다.
+- **영상은 건드리지 않는다.** 영상 리셋과 서로 독립적으로 동작한다.
+- 응답: `{ "hiddenCount": 30 }` + 데이터가 보관된다는 안내 메시지.
 
-### Request
+---
 
-```json
-{
-  "status": "RESOLVED",
-  "memo": "관리자 확인 완료"
-}
-```
+## Health
 
-### Response
+| Method | Path | 권한 | 응답 |
+|---|---|---|---|
+| GET | `/api/health` | 공개 | `{ "status": "ok" }` |
 
-```json
-{
-  "eventId": "event-001",
-  "status": "RESOLVED",
-  "updatedAt": "2026-05-07T11:00:00+09:00"
-}
-```
+---
 
-## POST /api/auth/login
+## AI 서버 연동 계약
 
-관리자가 로그인합니다.
+> **2026-07 확인**: AI팀의 Anomaly Detection(정상만 학습→이상치 탐지) 반영 후에도 `/predict/video` 응답 스키마는 `{prediction, confidence, source, status(success/error), message}`로 **변경 없음**을 ai-server 코드로 확인함. 백엔드 매핑 그대로 유효.
 
-### Request
+백엔드는 AI 모델을 직접 실행하지 않고 HTTP로 연동한다.
 
-```json
-{
-  "email": "admin@example.com",
-  "password": "password"
-}
-```
+- **백엔드 → AI**: `POST {AI_SERVER_URL}/predict/video`
+  ```json
+  { "video_path": "uploads/sample.mp4" }
+  ```
+- **AI → 백엔드(응답)**:
+  ```json
+  { "prediction": "normal|abnormal", "confidence": 0.87, "source": "...", "status": "success", "message": null }
+  ```
+- 변환: `abnormal → ABNORMAL`(그 외 `NORMAL`), confidence → severity(`>=0.9` CRITICAL / `>=0.75` HIGH / `>=0.5` MEDIUM / else LOW), `status!=success`면 job `FAILED`.
+- `video_path`에는 `VideoSource.sourceUrl` 값이 그대로 전달된다:
+  - local 모드: 백엔드 파일시스템 경로 → AI 서버가 동일 경로(같은 머신/공유 볼륨)로 접근
+  - s3 모드: **S3 객체 키** (`videos/{uuid}-{filename}`) → AI 서버가 버킷(`project10-86-virg-apap-media`, us-east-1)에서 직접 다운로드. AI 측도 EC2 Role 등 S3 읽기 권한 필요
 
-### Response
+## 환경변수
 
-```json
-{
-  "accessToken": "jwt_access_token",
-  "tokenType": "Bearer"
-}
-```
+| 변수 | 설명 | 기본값 |
+|---|---|---|
+| `DB_HOST`/`DB_PORT`/`DB_NAME`/`DB_USERNAME`/`DB_PASSWORD` | MySQL 연결 | localhost/3306/abnormal_alarm/root/APAP2026 |
+| `AI_SERVER_URL` | AI 추론 서버 | `http://localhost:8000` |
+| `BASE_URL` | 백엔드 주소 | `http://localhost:8080` |
+| `GOOGLE_CLIENT_ID` | 구글 OAuth 클라이언트 ID | — |
+| `JWT_SECRET` | JWT 서명 키(32바이트+) | (미설정 시 임시키) |
+| `JWT_EXPIRATION_MS` | 토큰 만료(ms) | `86400000` |
+| `APP_STORAGE_MODE` | 영상 저장 모드 `local`/`s3` | `local` |
+| `S3_BUCKET` | S3 버킷 이름 (s3 모드) | `project10-86-virg-apap-media` |
+| `AWS_REGION` | S3 리전 (s3 모드, 계정 정책상 고정) | `us-east-1` |
+| `ANALYSIS_AUTO_ON_UPLOAD` | 업로드 시 자동 분석 여부 | `true` |
+| `MAX_UPLOAD_SIZE` / `MAX_UPLOAD_REQUEST_SIZE` | 업로드 용량 상한 (`-1` 무제한) | `-1` |
+
+> S3 자격증명 환경변수는 **없다**. 이 AWS 계정은 액세스 키 발급이 불가하며, EC2 인스턴스 프로파일 Role(`SafeInstanceProfile-project10-86-virg`)로 자동 인증한다.
+
+> 변경 이력: 이메일/비밀번호 인증 제거 → 구글 OIDC + JWT 도입, 시나리오 도메인 제거, soft delete 도입, 영상 저장 S3 전환(local/s3 모드 분기).

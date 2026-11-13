@@ -1,0 +1,104 @@
+/* 화면 우상단 실시간 감지 알림 */
+
+.alert-toast-stack {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 1000;
+
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+
+  width: min(340px, calc(100vw - 40px));
+  pointer-events: none;
+}
+
+.alert-toast {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  overflow: hidden;
+
+  background: #ffffff;
+  border: 1px solid #f0c3c3;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+
+  pointer-events: auto;
+  animation: alert-toast-in 0.22s ease-out;
+}
+
+@keyframes alert-toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* 위험 상태를 색으로도 알 수 있게 왼쪽에 띠를 둔다 */
+.alert-toast__bar {
+  flex: 0 0 5px;
+  background: #d64545;
+}
+
+.alert-toast__body {
+  flex: 1;
+  padding: 12px 8px 12px 12px;
+  border: none;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.alert-toast__title {
+  margin: 0 0 4px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #b3261e;
+}
+
+.alert-toast__message {
+  margin: 0 0 6px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: #222222;
+  word-break: keep-all;
+}
+
+.alert-toast__meta {
+  margin: 0;
+  font-size: 11px;
+  color: #777777;
+}
+
+.alert-toast__close {
+  flex: 0 0 32px;
+  align-self: flex-start;
+
+  padding: 8px 8px 0 0;
+  border: none;
+  background: transparent;
+
+  font-size: 18px;
+  line-height: 1;
+  color: #999999;
+  cursor: pointer;
+}
+
+.alert-toast__close:hover {
+  color: #555555;
+}
+
+@media (max-width: 480px) {
+  .alert-toast-stack {
+    top: 12px;
+    right: 12px;
+    width: calc(100vw - 24px);
+  }
+}
