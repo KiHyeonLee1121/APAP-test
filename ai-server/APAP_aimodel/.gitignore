@@ -11,3 +11,6 @@ outputs/*
 
 data/processed/*
 !data/processed/.gitkeep
+
+scratchpad/
+data/raw/**/*.mp4

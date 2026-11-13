@@ -1,5 +1,19 @@
 opencv-python
-mediapipe
+# mediapipe==0.10.21 has no Linux wheel (only macOS) — pin per-platform so
+# local macOS dev keeps the version already verified there.
+#
+# IMPORTANT — exact pin required on Linux, NOT a range: mediapipe 0.10.30+
+# ships as a universal "py3-none" wheel and REMOVED the legacy mp.solutions.*
+# API this codebase uses (mp.solutions.pose.Pose(...) -> AttributeError).
+# A range like ">=0.10.18,<1.0" looks safe (still "0.10.x") but pip installs
+# the newest match, silently picking 0.10.35 and breaking at runtime instead
+# of failing at install time. 0.10.18 is also the LAST version with a Linux
+# wheel for Python 3.11 at all — Python 3.14 (e.g. Ubuntu 25.10's default
+# python3) has no compatible mp.solutions-era build, period. Use the
+# docker/Dockerfile (pinned to python:3.11-slim) for Linux deployment rather
+# than a bare venv against the host's system Python.
+mediapipe==0.10.21; sys_platform == "darwin"
+mediapipe==0.10.18; sys_platform == "linux"
 numpy
 pandas
 scikit-learn
@@ -10,3 +24,5 @@ uvicorn
 pydantic
 ultralytics
 python-multipart
+torch
+boto3

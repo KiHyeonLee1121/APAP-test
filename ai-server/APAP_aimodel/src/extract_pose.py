@@ -42,8 +42,35 @@ def _landmarks_to_array(pose_landmarks) -> np.ndarray:
             [landmark.x, landmark.y, landmark.z, landmark.visibility]
             for landmark in pose_landmarks.landmark
         ],
-        dtype=np.float32,
+        dtype=np.float32, 
     )
+
+
+def read_video_fps(video_path: str) -> float:
+    """Return a video's frames-per-second, or 0.0 if it cannot be determined.
+
+    Opens only the container header (no frame decoding), so this is cheap enough
+    to call even on a landmark cache hit. Callers treat a non-positive return as
+    "unknown fps" and fall back to windowing the whole clip as one window.
+    """
+    if cv2 is None:
+        return 0.0
+
+    capture = None
+    try:
+        capture = cv2.VideoCapture(str(video_path))
+        if not capture.isOpened():
+            return 0.0
+        fps = float(capture.get(cv2.CAP_PROP_FPS))
+    except Exception:
+        return 0.0
+    finally:
+        if capture is not None:
+            capture.release()
+
+    if not np.isfinite(fps) or fps <= 0:
+        return 0.0
+    return fps
 
 
 def extract_pose_landmarks(
